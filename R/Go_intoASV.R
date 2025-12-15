@@ -6,7 +6,7 @@
 #' and similarity-based grouping.
 #'
 #' @author Heekuk Park <hp2523@cumc.columbia.edu>
-#' @date 2025-11-10
+#' Created on 2025-11-10
 #'
 #' @description
 #' For each taxonomic group (or all ASVs), this function:

@@ -4,7 +4,7 @@
 #' and generates diagnostic plots + cluster-quality summary table.
 #'
 #' @author Heekuk Park <hp2523@cumc.columbia.edu>
-#' @date 2025-11-16
+#' Created on 2025-11-16
 #' 
 #' @param project Project name (used for output folder naming)
 #' @param cluster_map CSV file containing ASV and ClusterID columns
