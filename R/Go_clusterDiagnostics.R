@@ -463,8 +463,5 @@ Go_clusterDiagnostics <- function(
   message(dist_file)
   # message(anno_file)
   
-  
-  
   return(invisible(NULL))
 }
-
