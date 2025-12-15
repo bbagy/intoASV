@@ -28,14 +28,7 @@ Go_clusterDiagnostics <- function(
     cluster_map,
     out_dir = NULL
 ){
-  suppressPackageStartupMessages({
-    library(DECIPHER)
-    library(Biostrings)
-    library(ggplot2)
-    library(dplyr)
-  })
-  
-  
+
   if(!is.null(dev.list())) dev.off()
   ###############################################
   # 0. Output directory structure
@@ -331,11 +324,7 @@ Go_clusterDiagnostics <- function(
   ###############################################
   message("[Go_clusterDiagnostics] Generating ASV-level heatmap (pheatmap, final)...")
   
-  suppressPackageStartupMessages({
-    library(pheatmap)
-    library(Polychrome)
-  })
-  
+
   # 1) Distance matrix (ASV × ASV)
   dist_mat <- dm_global
   if (is.null(rownames(dist_mat))) {

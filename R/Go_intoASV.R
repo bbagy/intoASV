@@ -158,14 +158,6 @@ Go_intoASV <- function(
     seed = 123,
     n_cores = 4
 ){
-  suppressPackageStartupMessages({
-    library(phyloseq)
-    library(DECIPHER)
-    library(Biostrings)
-    library(pwalign)
-    library(ape)
-    library(parallel)
-  })
   
   start_time <- Sys.time()
   set.seed(seed)
