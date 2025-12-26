@@ -168,9 +168,11 @@ Go_intoASV <- function(
   distance_gap   <- match.arg(distance_gap)
   distance_model <- match.arg(distance_model)
   weighting      <- match.arg(weighting)
-
+  ###############################################
+  # 0. Output directory structure
+  ###############################################
   date_tag <- format(Sys.Date(), "%y%m%d")
-  dir_base <- sprintf("%s_%s/table/pi_tab", project, date_tag)
+  dir_base <- sprintf("%s_%s/intoASV/pi_tab", project, date_tag)
   dir.create(dir_base, recursive = TRUE, showWarnings = FALSE)
 
   # ---------- IO helpers ----------
