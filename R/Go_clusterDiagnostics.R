@@ -112,16 +112,7 @@ Go_clusterDiagnostics <- function(
   }
 
   ###############################################
-  # 5. Save extended diagnostics table
-  ###############################################
-  diag_file <- sprintf("%s/cluster_diagnostics_%s.csv", out_dir, date_tag)
-  write.csv(cm, diag_file, row.names = FALSE)
-
-  message("[Go_clusterDiagnostics] Diagnostics table saved:")
-  message(diag_file)
-
-  ###############################################
-  # 6. Minimal plots
+  # 5. Minimal plots
   ###############################################
   message("[Go_clusterDiagnostics] Generating plots...")
 
@@ -150,7 +141,7 @@ Go_clusterDiagnostics <- function(
   ggsave(sprintf("%s/cluster_size_vs_internal_mean.pdf", out_dir), p3, width=6, height=4)
 
   ###############################################
-  # 7. NEW: Create cluster quality summary table
+  # 6. NEW: Create cluster quality summary table
   ###############################################
   quality_df <- cm %>%
     group_by(ClusterID) %>%
@@ -174,12 +165,24 @@ Go_clusterDiagnostics <- function(
       )
     )
 
+  cm_asv <- cm %>%
+    left_join(quality_df %>% select(ClusterID, quality_label),
+              by = "ClusterID")
+
+  ###############################################
+  # 7. Save extended diagnostics table
+  ###############################################
+  diag_file <- sprintf("%s/cluster_diagnostics_%s.csv", out_dir, date_tag)
+  write.csv(cm_asv, diag_file, row.names = FALSE)
+
+  message("[Go_clusterDiagnostics] Diagnostics table saved:")
+  message(diag_file)
+
   quality_file <- sprintf("%s/cluster_quality_%s.csv", out_dir, date_tag)
   write.csv(quality_df, quality_file, row.names = FALSE)
 
   message("[Go_clusterDiagnostics] Cluster quality summary saved:")
   message(quality_file)
-
 
   ###############################################
   # 8. NEW: Per-cluster alignment visualization
