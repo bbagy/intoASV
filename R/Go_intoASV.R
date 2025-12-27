@@ -205,28 +205,43 @@ Go_intoASV <- function(
   if (!taxa_are_rows(psIN)) otu_tab <- t(otu_tab)
   tax_tab <- as(tax_table(psIN), "matrix")
 
-  # ---------- sequences ----------
-  seqs_all <- tryCatch({
-    as.character(refseq(psIN))
-  }, error = function(e) {
-    rownames(as(otu_table(psIN), "matrix"))
-  })
-
-
-  # ---------- name assignment (explicitly checked) ----------
-  tt <- try(names(seqs_all) <- taxa_names(psIN), silent = TRUE)
-
-  if (inherits(tt, "try-error")) {
-    seqs_all <- colnames(as(otu_table(psIN), "matrix"))
-    names(seqs_all) <- taxa_names(psIN)
+  # ----- 1) try refseq -----
+  seqs_tmp <- NULL
+  if (!is.null(refseq(psIN, errorIfNULL = FALSE))) {
+    ref <- as.character(refseq(psIN))
+    if (all(grepl("^[ACGTN]+$", ref))) {
+      message("[Go_intoASV] Using refseq as DNA sequences.")
+      seqs_tmp <- ref
+    }
   }
 
-
-  if (any(!grepl("^[ACGTN]+$", seqs_all))) {
-    warning("The refseq slot is empty or taxa_names are not valid DNA sequences. Alignment may fail.")
-    cat("WARN: refseq missing or taxa_names are not valid DNA sequences\n",
-        file = log_file, append = TRUE)
+  # ----- 2) try taxa_names -----
+  if (is.null(seqs_tmp)) {
+    tx <- taxa_names(psIN)
+    if (all(grepl("^[ACGTN]+$", tx))) {
+      message("[Go_intoASV] Using taxa_names as DNA sequences.")
+      seqs_tmp <- tx
+    }
   }
+
+  # ----- 3) try rownames/colnames ONLY if DNA -----
+  if (is.null(seqs_tmp)) {
+    rn <- rownames(as(otu_table(psIN), "matrix"))
+    if (all(grepl("^[ACGTN]+$", rn))) seqs_tmp <- rn
+    cn <- colnames(as(otu_table(psIN), "matrix"))
+    if (is.null(seqs_tmp) && all(grepl("^[ACGTN]+$", cn))) seqs_tmp <- cn
+  }
+
+  # ----- 4) stop if no DNA found -----
+  if (is.null(seqs_tmp)) {
+    stop("[Go_intoASV] ❌ No valid DNA sequences found in refseq / taxa_names / OTU names.")
+  }
+
+  # ----- 5) assign IDs -----
+  names(seqs_tmp) <- taxa_names(psIN)
+  seqs_all <- seqs_tmp
+
+  message(sprintf("[Go_intoASV] Loaded %d DNA sequences", length(seqs_all)))
 
   # ---------- helper for clustering (average linkage) ----------
   cluster_from_dm <- function(dm, cutoff) {
