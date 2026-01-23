@@ -1,4 +1,4 @@
-<img src="inst/figures/logo.png" align="right" width="160"/>
+<img src="inst/figures/logo.png" align="left" width="240"/>
 
 # intoASV
 
@@ -59,7 +59,7 @@ for exploratory analysis.
 
 ## Documentation
 
-- 📘 Full workflow and QC vignette  
+- Full workflow and QC vignette  
   `vignettes/intoASV_QC_heatmap_workflow.Rmd`
 
 ---
