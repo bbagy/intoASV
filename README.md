@@ -61,11 +61,11 @@ for exploratory analysis.
 
 ## Documentation
 
--  **Full workflow and QC vignette (HTML)**  
-  https://bbagy.github.io/intoASV/docs/articles/intoASV_QC_heatmap_workflow.html
-  
+- **Full workflow and QC vignette (HTML)**  
+  https://bbagy.github.io/intoASV/articles/intoASV_QC_heatmap_workflow.html
+
 - **Interactive ASV distance heatmap (HTML)**  
-  https://bbagy.github.io/intoASV/docs/ASV_distance_heatmap_20251226.html
+  https://bbagy.github.io/intoASV/ASV_distance_heatmap_20251226.html
 
 ---
 
