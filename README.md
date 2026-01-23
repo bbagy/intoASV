@@ -24,6 +24,11 @@ devtools::install_github("bbagy/intoASV")
 
 ## Quick example
 
+**intoASV** takes a `phyloseq` object as input and computes intra-taxonomic
+microdiversity metrics from ASV-level sequence variation.
+
+The resulting microdiversity estimates are automatically merged into the `sample_data` slot of the returned `phyloseq` object, enabling seamless downstream analysis and visualization within standard phyloseq-based workflows.
+
 ```r
 library(intoASV)
 library(phyloseq)
@@ -41,6 +46,7 @@ res <- Go_intoASV(
   weighting = "entropy"
 )
 ```
+
 
 ---
 
