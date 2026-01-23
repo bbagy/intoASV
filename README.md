@@ -1,4 +1,4 @@
-<img src="inst/figures/logo.png" align="left" width="300"/>
+<img src="inst/figures/logo.png" align="center" width="400"/>
 
 <br/><br clear="left"/>
 
@@ -17,7 +17,7 @@ low-biomass and amplicon-based studies.
 ## Installation
 
 ```r
-devtools::install_github("bbagy/intoASV", force = T) 
+devtools::install_github("bbagy/intoASV") 
 ```
 
 ---
