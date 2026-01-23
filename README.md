@@ -1,8 +1,6 @@
 <img src="inst/figures/logo.png" align="left" width="300"/>
 
-<div style="margin-top: 20px;"></div>
-
-<br clear="left"/>
+<br/><br/><br clear="left"/>
 
 **intoASV** is an R framework for quantifying *intra-taxonomic microdiversity*
 from 16S rRNA amplicon data using ASV-level sequence variation.
