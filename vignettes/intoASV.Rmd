@@ -1,0 +1,44 @@
+---
+title: "intoASV"
+author: "Heekuk"
+date: "2026-01-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+ps_intoASV <- Go_intoASV(
+  psIN = ps2,
+  project = project,
+  #level = "Species",
+  #target = "all",
+  clustering_cutoff=0.995,
+  similarity_cutoff=0.97,
+  compute_ci = T,
+  method = "nucdiv",     # 근사 계산 nucdiv  simple
+  aligner = "DECIPHER",     # alignment 강화 DECIPHER
+  min_asv = 3,           # ASV 수 3 이상만 계산
+  min_abund = 10,        # 최소 풍부도 제한
+  distance_gap = "exclude",
+  weighting = "entropy" # entropy abundance
+)
+
+Go_clusterDiagnostics(project, cluster_map = "intoASV_CP_260102/intoASV/pi_tab/cluster_map_similarity_0.970_260102.csv")
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+conda activate qiime2
+python3 ~/Dropbox/04_scripts/Go_intoASVs/intoASV/Python/asv_distance_heatmap.py \
+--dist asv_distance_matrix_*.csv \
+--anno cluster_diagnostics_*.csv \
+--order asv_order_*.csv \
+--out ASV_distance_heatmap_$(date +%Y%m%d).html
+```
+

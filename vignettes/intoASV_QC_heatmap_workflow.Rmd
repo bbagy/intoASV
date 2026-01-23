@@ -1,0 +1,155 @@
+---
+title: "intoASV: Workflow and QC (Heatmap-focused)"
+author: "Heekuk Park"
+date: "2026-01-23"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{intoASV workflow and QC}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+## 1. Overview
+
+This vignette demonstrates a **standard intoASV workflow** with a focus on
+**quality control (QC)** and **ASV-level distance heatmap visualization**.
+
+The goal of this analysis is to quantify within-taxon microdiversity (π),
+validate clustering and alignment quality, and generate both **static (PNG)**
+and **interactive (HTML)** heatmaps for diagnostic purposes.
+
+---
+
+## 2. Running intoASV
+
+The main intoASV analysis is performed using `Go_intoASV()`.
+Below is an example configuration highlighting commonly used parameters.
+
+```{r run-intoASV}
+ps_intoASV <- Go_intoASV(
+  psIN = ps2,
+  project = project,
+
+  # clustering and similarity thresholds
+  clustering_cutoff = 0.995,
+  similarity_cutoff = 0.97,
+
+  # π calculation
+  compute_ci = TRUE,
+  method = "nucdiv",          # nucdiv: TN93-based approximation; simple: Hamming
+  aligner = "DECIPHER",
+
+  # filtering
+  min_asv = 3,                # minimum ASVs per cluster
+  min_abund = 10,             # minimum total abundance
+  distance_gap = "exclude",
+
+  # weighting scheme
+  weighting = "entropy"       # entropy or abundance
+)
+```
+
+---
+
+## 3. QC 1: Cluster diagnostics
+
+After clustering ASVs by sequence similarity, cluster-level diagnostics
+should be examined to ensure that clusters represent meaningful biological
+groupings rather than sequencing artifacts.
+
+```{r qc-cluster}
+Go_clusterDiagnostics(
+  project = project,
+  cluster_map =
+    "intoASV_CP_260102/intoASV/pi_tab/cluster_map_similarity_0.970_260102.csv"
+)
+```
+
+Recommended checks include:
+- cluster size distribution
+- abundance balance within clusters
+- detection of singleton- or error-driven clusters
+
+---
+
+## 4. QC 2: Distance matrix and heatmap generation
+
+To further inspect within-cluster heterogeneity, ASV-level distance matrices
+can be visualized as heatmaps. These are particularly useful for identifying
+outlier ASVs or residual redundancy after clustering.
+
+### 4.1 Generate interactive heatmap (HTML)
+
+The following **command-line workflow** generates an interactive HTML heatmap.
+This file is intended for **exploratory analysis** and should be hosted
+outside the R package (e.g. GitHub Pages).
+
+```bash
+conda activate qiime2
+
+python3 ~/Dropbox/04_scripts/Go_intoASVs/intoASV/Python/asv_distance_heatmap.py \
+  --dist  asv_distance_matrix_*.csv \
+  --anno  cluster_diagnostics_*.csv \
+  --order asv_order_*.csv \
+  --out   ASV_distance_heatmap_$(date +%Y%m%d).html
+```
+
+The resulting HTML file provides:
+- interactive zooming
+- cluster-level annotations
+- visual separation of closely related ASVs
+
+---
+
+### 4.2 Static heatmap for reproducibility
+
+For reproducible documentation and package inclusion, a **static PNG version**
+of the heatmap should be generated and stored under:
+
+```
+inst/figures/qc_asv_distance_heatmap.png
+```
+
+This static figure can be included directly in the vignette:
+
+```{r qc-heatmap-static, echo=FALSE}
+knitr::include_graphics(
+  system.file("figures/qc_asv_distance_heatmap.png", package = "intoASV")
+)
+```
+
+---
+
+## 5. Interpretation notes
+
+- Dense diagonal blocks indicate closely related ASVs within a cluster
+- Off-diagonal structure may suggest sub-strain divergence
+- Highly isolated ASVs should be re-evaluated for abundance or alignment quality
+
+When combined with π estimates, these heatmaps provide a robust QC framework
+to distinguish **intragenomic variation** from **true strain-level diversity**.
+
+---
+
+## 6. Summary
+
+This vignette outlines a practical intoASV QC workflow, integrating:
+- entropy-weighted π estimation
+- cluster diagnostics
+- ASV-level distance heatmaps (static and interactive)
+
+Together, these steps ensure that inferred microdiversity reflects biological
+signal rather than technical noise.
