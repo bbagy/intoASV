@@ -13,12 +13,14 @@ vignette: >
 ---
 
 ```{r setup, include=FALSE}
+library(intoASV)
+library(phyloseq)
+
 knitr::opts_chunk$set(
   echo = TRUE,
+  eval = FALSE,
   message = FALSE,
-  warning = FALSE,
-  fig.width = 7,
-  fig.height = 5
+  warning = FALSE
 )
 ```
 
@@ -41,7 +43,7 @@ Below is an example configuration highlighting commonly used parameters.
 ```{r run-intoASV}
 ps_intoASV <- Go_intoASV(
   psIN = ps2,
-  project = project,
+  project = "myproject",
 
   # clustering and similarity thresholds
   clustering_cutoff = 0.995,
@@ -98,9 +100,7 @@ This file is intended for **exploratory analysis** and should be hosted
 outside the R package (e.g. GitHub Pages).
 
 ```bash
-conda activate qiime2
-
-python3 ~/Dropbox/04_scripts/Go_intoASVs/intoASV/Python/asv_distance_heatmap.py \
+python3 intoASV/Python/asv_distance_heatmap.py \
   --dist  asv_distance_matrix_*.csv \
   --anno  cluster_diagnostics_*.csv \
   --order asv_order_*.csv \
