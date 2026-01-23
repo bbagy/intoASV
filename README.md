@@ -1,5 +1,6 @@
 <img src="inst/figures/logo.png" align="left" width="300"/>
 
+<div style="margin-top: 20px;"></div>
 
 <br clear="left"/>
 
