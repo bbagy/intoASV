@@ -30,7 +30,7 @@ Go_intoASV(
 optionally DNA sequences in \code{refseq(psIN)}.}
 
 \item{project}{Character; project prefix used to create the output directory
-\verb{<project_YYMMDD>/table/pi_tab/}.}
+\verb{<project>_<YYMMDD>/intoASV/pi_tab/}.}
 
 \item{level}{Character; taxonomic rank to group ASVs before computing π
 (e.g., \code{"Genus"}, \code{"Family"}). Ignored if \code{similarity_cutoff} is set.
@@ -90,7 +90,7 @@ Default \code{200}.}
 \value{
 A \code{phyloseq} object identical to the input but with new columns
 added to \code{sample_data(psIN)} for each computed π and ASV count.
-Also writes CSVs and a log file under the project directory.
+Also writes CSVs and a log file under the date-stamped project directory.
 }
 \description{
 For each taxonomic group (or all ASVs), this function:

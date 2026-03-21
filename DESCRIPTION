@@ -1,11 +1,16 @@
 Package: intoASV
-Title: What the Package Does (One Line, Title Case)
+Title: Intra-Taxonomic Microdiversity Analysis from ASV Data
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+    person("Heekuk", "Park", , "hp2523@cumc.columbia.edu", role = c("aut", "cre"))
+Description: Provides a workflow for quantifying intra-taxonomic
+    microdiversity from amplicon sequence variant (ASV) data stored in
+    phyloseq objects. The package supports taxonomy-based or
+    similarity-based grouping, within-group sequence clustering,
+    nucleotide-diversity estimation, cluster diagnostics, and static or
+    interactive quality-control visualizations for ASV-level distance
+    structure.
+License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
@@ -13,10 +18,13 @@ Imports:
     phyloseq,
     DECIPHER,
     Biostrings,
+    IRanges,
     pwalign,
     ape,
+    cluster,
     parallel,
     ggplot2,
     dplyr,
+    magrittr,
     pheatmap,
     Polychrome

@@ -27,17 +27,20 @@ devtools::install_github("bbagy/intoASV")
 **intoASV** takes a `phyloseq` object as input and computes intra-taxonomic
 microdiversity metrics from ASV-level sequence variation.
 
-The resulting microdiversity estimates are automatically merged into the `sample_data` slot of the returned `phyloseq` object, enabling seamless downstream analysis and visualization within standard phyloseq-based workflows.
+The resulting microdiversity estimates are merged into the `sample_data`
+slot of the returned `phyloseq` object, enabling downstream analysis
+within standard phyloseq-based workflows.
 
 ```r
 library(intoASV)
 library(phyloseq)
 
-# example dataset included with the package
-data(example_phyloseq)
+# your phyloseq object containing ASV abundance, taxonomy,
+# and DNA sequences in refseq(ps)
+ps <- your_phyloseq_object
 
 res <- Go_intoASV(
-  psIN = example_phyloseq,
+  psIN = ps,
   project = "myproject",
   clustering_cutoff = 0.995,
   similarity_cutoff = 0.97,
@@ -62,6 +65,23 @@ intoASV provides multiple QC diagnostics, including:
 Static QC figures are included in the package (`inst/figures`),
 while interactive heatmaps are provided as HTML via GitHub Pages
 for exploratory analysis.
+
+Typical outputs are written under a date-stamped project directory such as:
+
+```text
+myproject_260321/intoASV/pi_tab/
+myproject_260321/intoASV/cluster_diagnostics/
+```
+
+After similarity-based clustering, cluster diagnostics can be generated with:
+
+```r
+Go_clusterDiagnostics(
+  project = "myproject",
+  cluster_map =
+    "myproject_260321/intoASV/pi_tab/cluster_map_similarity_0.970_260321.csv"
+)
+```
 
 ---
 

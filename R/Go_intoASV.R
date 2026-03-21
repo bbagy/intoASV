@@ -592,11 +592,19 @@ ASV count matrix saved: %s
     pi_cols  <- make_uniq(pi_cols)
     asv_cols <- make_uniq(asv_cols)
 
+    if (ncol(pi_cols) > 0) {
+      sd$pi_global <- rowMeans(pi_cols, na.rm = TRUE)
+      sd$pi_global[!is.finite(sd$pi_global)] <- NA_real_
+    }
+
     sd_merged <- cbind(sd, pi_cols, asv_cols)
     sample_data(psIN) <- sd_merged
 
     cat(sprintf("\n[merge] Added to sample_data: %d pi cols, %d asv-count cols\n",
                 ncol(pi_cols), ncol(asv_cols)))
+    if (ncol(pi_cols) > 0) {
+      cat("[Go_intoASV] pi_global added to sample_data (mean across pi_* columns)\n")
+    }
   } else {
     warning("sample_data(psIN) is NULL — cannot merge π results into sample metadata.")
   }
