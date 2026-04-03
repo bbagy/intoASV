@@ -317,9 +317,12 @@ Go_intoASV <- function(
   # ---------- utils ----------
   trim_alignment <- function(aln, k) {
     if (k <= 0) return(aln)
-    w <- width(aln)[1]; if (k >= w/2) return(aln)
-    rng <- IRanges(start = 1 + k, end = w - k)
-    DNAStringSet(subseq(aln, start = start(rng), end = end(rng)))
+    w <- Biostrings::width(aln)[1]
+    if (k >= w / 2) return(aln)
+    rng <- IRanges::IRanges(start = 1 + k, end = w - k)
+    Biostrings::DNAStringSet(
+      Biostrings::subseq(aln, start = IRanges::start(rng), end = IRanges::end(rng))
+    )
   }
   entropy_weights <- function(p) {
     v <- p * (1 - p); if (sum(v) == 0) return(rep(0, length(p))); v / sum(v)
@@ -410,7 +413,7 @@ Go_intoASV <- function(
     # ----- trimming & gap QC -----
     if (trim_nt > 0) aln <- trim_alignment(aln, trim_nt)
     gap_prop <- tryCatch({
-      sum(letterFrequency(aln, "-")) / (width(aln)[1] * length(aln))
+      sum(letterFrequency(aln, "-")) / (Biostrings::width(aln)[1] * length(aln))
     }, error = function(e) NA_real_)
     cat(sprintf("%s: Gap proportion %.2f%%\n",
                 target_taxon, 100*gap_prop), file = log_file, append = TRUE)
