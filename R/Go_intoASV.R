@@ -92,8 +92,9 @@
 #' \itemize{
 #'   \item \code{pi_matrix_<method>_<level-or-mode>_<target>_<date>.csv}
 #'   \item \code{asv_count_matrix_<level-or-mode>_<target>_<date>.csv}
-#'   \item optional \code{pi_ci_low_matrix_*.csv}, \code{pi_ci_high_matrix_*.csv}
-#'   \item text log: \code{pi_log_<method>_<level>_<target>_<date>.txt}
+#'   \item optional \code{pi_ci_low_matrix_<method>_<level-or-mode>_<target>_<date>.csv},
+#'         \code{pi_ci_high_matrix_<method>_<level-or-mode>_<target>_<date>.csv}
+#'   \item text log: \code{pi_log_<method>_<level-or-mode>_<target>_<date>.txt}
 #'   \item and if \code{global_similarity_cutoff} is set:
 #'         \code{cluster_map_similarity_<cutoff>_<date>.csv}
 #' }
@@ -166,11 +167,19 @@ Go_intoASV <- function(
   set.seed(seed)
 
   if (!is.null(clustering_cutoff)) {
+    if (!is.null(taxonomy_cluster_cutoff) &&
+        !isTRUE(all.equal(taxonomy_cluster_cutoff, clustering_cutoff))) {
+      stop("Conflicting values supplied for 'taxonomy_cluster_cutoff' and deprecated 'clustering_cutoff'.")
+    }
     warning("'clustering_cutoff' is deprecated; use 'taxonomy_cluster_cutoff' instead.",
             call. = FALSE)
     taxonomy_cluster_cutoff <- clustering_cutoff
   }
   if (!is.null(similarity_cutoff)) {
+    if (!is.null(global_similarity_cutoff) &&
+        !isTRUE(all.equal(global_similarity_cutoff, similarity_cutoff))) {
+      stop("Conflicting values supplied for 'global_similarity_cutoff' and deprecated 'similarity_cutoff'.")
+    }
     warning("'similarity_cutoff' is deprecated; use 'global_similarity_cutoff' instead.",
             call. = FALSE)
     global_similarity_cutoff <- similarity_cutoff
@@ -312,7 +321,7 @@ Go_intoASV <- function(
                 global_similarity_cutoff),
         file = log_file, append = TRUE)
 
-    # similarity 모드에서는 tax_labels = ClusterID
+    # In similarity mode, each global sequence cluster becomes the analysis unit.
     tax_labels <- cluster_map$ClusterID
     names(tax_labels) <- cluster_map$ASV
     taxa_targets <- unique(cluster_map$ClusterID)
@@ -390,8 +399,8 @@ Go_intoASV <- function(
     seqs <- DNAStringSet(seqs_sub)
 
     # ----- intra-group clustering -----
-    # similarity 모드: 전역 cluster_map만 사용, 여기서는 subclustering 금지
-    # taxonomy 모드: 예전처럼 clustering_cutoff 기반 largest subcluster only
+    # Similarity mode uses the global cluster map only; no subclustering here.
+    # Taxonomy mode keeps the largest near-identical subcluster within each taxon.
     if (is.null(global_similarity_cutoff) && !is.null(taxonomy_cluster_cutoff)) {
       dm <- DECIPHER::DistanceMatrix(seqs, includeTerminalGaps = FALSE)
       cl_vec <- cluster_from_dm(dm, taxonomy_cluster_cutoff)
@@ -406,7 +415,6 @@ Go_intoASV <- function(
         return(NULL)
       }
     } else if (!is.null(global_similarity_cutoff)) {
-      # similarity 모드에서는 서브클러스터링 스킵
       cat(sprintf("Similarity mode active — skipping intra-group clustering for %s\n",
                   target_taxon),
           file = log_file, append = TRUE)
@@ -536,7 +544,7 @@ Go_intoASV <- function(
     return(psIN)
   }
 
-  # similarity 모드가 아닌 경우에만 target 필터 적용
+  # Apply target filtering only in taxonomy mode.
   if (is.null(global_similarity_cutoff) && !identical(target,"all")) {
     results <- results[trimws(results$Taxon) == trimws(target), , drop = FALSE]
     if (nrow(results) == 0) {
@@ -568,16 +576,16 @@ Go_intoASV <- function(
   if (compute_ci && all(c("Pi_CI_low","Pi_CI_high") %in% names(results))) {
     ci_low_tab  <- as.data.frame(safe_tapply(results$Pi_CI_low,  results$Sample, results$Taxon, identity))
     ci_high_tab <- as.data.frame(safe_tapply(results$Pi_CI_high, results$Sample, results$Taxon, identity))
-    if (!identical(target,"all")) {
+    if (is.null(global_similarity_cutoff) && !identical(target,"all")) {
       keep <- colnames(ci_low_tab) %in% trimws(target)
       ci_low_tab  <- ci_low_tab[,  keep, drop = FALSE]
       ci_high_tab <- ci_high_tab[, keep, drop = FALSE]
     }
     colnames(ci_low_tab)  <- paste0("pi_CI_low_",  colnames(ci_low_tab))
     colnames(ci_high_tab) <- paste0("pi_CI_high_", colnames(ci_high_tab))
-    write.csv(ci_low_tab,  sprintf("%s/pi_ci_low_matrix_%s_%s_%s.csv",  dir_base, method, level_tag, date_tag),
+    write.csv(ci_low_tab,  sprintf("%s/pi_ci_low_matrix_%s_%s_%s_%s.csv",  dir_base, method, level_tag, target_tag, date_tag),
               row.names = TRUE, na = "")
-    write.csv(ci_high_tab, sprintf("%s/pi_ci_high_matrix_%s_%s_%s.csv", dir_base, method, level_tag, date_tag),
+    write.csv(ci_high_tab, sprintf("%s/pi_ci_high_matrix_%s_%s_%s_%s.csv", dir_base, method, level_tag, target_tag, date_tag),
               row.names = TRUE, na = "")
   }
 

@@ -136,8 +136,9 @@ The function saves:
 \itemize{
 \item \code{pi_matrix_<method>_<level-or-mode>_<target>_<date>.csv}
 \item \code{asv_count_matrix_<level-or-mode>_<target>_<date>.csv}
-\item optional \code{pi_ci_low_matrix_*.csv}, \code{pi_ci_high_matrix_*.csv}
-\item text log: \code{pi_log_<method>_<level>_<target>_<date>.txt}
+\item optional \code{pi_ci_low_matrix_<method>_<level-or-mode>_<target>_<date>.csv},
+\code{pi_ci_high_matrix_<method>_<level-or-mode>_<target>_<date>.csv}
+\item text log: \code{pi_log_<method>_<level-or-mode>_<target>_<date>.txt}
 \item and if \code{global_similarity_cutoff} is set:
 \code{cluster_map_similarity_<cutoff>_<date>.csv}
 }
