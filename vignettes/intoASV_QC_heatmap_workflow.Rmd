@@ -44,10 +44,10 @@ Below is an example configuration highlighting commonly used parameters.
 ps_intoASV <- Go_intoASV(
   psIN = ps2,
   project = "myproject",
+  level = "Genus",
 
   # clustering and similarity thresholds
-  clustering_cutoff = 0.995,
-  similarity_cutoff = 0.97,
+  taxonomy_cluster_cutoff = 0.995,
 
   # π calculation
   compute_ci = TRUE,
@@ -61,6 +61,27 @@ ps_intoASV <- Go_intoASV(
 
   # weighting scheme
   weighting = "entropy"       # entropy or abundance
+)
+
+ps_similarity <- Go_intoASV(
+  psIN = ps2,
+  project = "myproject",
+
+  # similarity mode ignores taxonomy grouping
+  global_similarity_cutoff = 0.97,
+
+  # π calculation
+  compute_ci = TRUE,
+  method = "nucdiv",
+  aligner = "DECIPHER",
+
+  # filtering
+  min_asv = 3,
+  min_abund = 10,
+  distance_gap = "exclude",
+
+  # weighting scheme
+  weighting = "entropy"
 )
 ```
 

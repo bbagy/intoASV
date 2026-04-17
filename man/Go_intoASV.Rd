@@ -7,14 +7,14 @@
 Go_intoASV(
   psIN,
   project,
-  level = "Genus",
+  level = NULL,
   target = "all",
   method = c("simple", "nucdiv"),
   aligner = c("DECIPHER", "MAFFT"),
   min_asv = 3,
   min_abund = 10,
-  clustering_cutoff = 0.995,
-  similarity_cutoff = NULL,
+  taxonomy_cluster_cutoff = 0.995,
+  global_similarity_cutoff = NULL,
   trim_nt = 8,
   distance_gap = c("exclude", "include"),
   distance_model = c("raw", "JC69"),
@@ -22,7 +22,9 @@ Go_intoASV(
   compute_ci = FALSE,
   n_boot = 200,
   seed = 123,
-  n_cores = 4
+  n_cores = 4,
+  clustering_cutoff = NULL,
+  similarity_cutoff = NULL
 )
 }
 \arguments{
@@ -30,14 +32,14 @@ Go_intoASV(
 optionally DNA sequences in \code{refseq(psIN)}.}
 
 \item{project}{Character; project prefix used to create the output directory
-\verb{<project>_<YYMMDD>/intoASV/pi_tab/}.}
+\verb{<project_YYMMDD>/table/pi_tab/}.}
 
-\item{level}{Character; taxonomic rank to group ASVs before computing π
-(e.g., \code{"Genus"}, \code{"Family"}). Ignored if \code{similarity_cutoff} is set.
-Default \code{"Genus"}.}
+\item{level}{Character or \code{NULL}; taxonomic rank to group ASVs before computing π
+(e.g., \code{"Genus"}, \code{"Family"}). Required in taxonomy mode and
+ignored if \code{global_similarity_cutoff} is set. Default \code{NULL}.}
 
 \item{target}{Character; a specific taxon (e.g., \code{"Lactobacillus"}) or
-\code{"all"} to compute across all taxa. Ignored if \code{similarity_cutoff} is set.
+\code{"all"} to compute across all taxa. Ignored if \code{global_similarity_cutoff} is set.
 Default \code{"all"}.}
 
 \item{method}{Character; one of \code{c("simple","nucdiv")}.
@@ -51,18 +53,18 @@ or \code{"MAFFT"} (external, faster if installed). Default \code{"DECIPHER"}.}
 
 \item{min_abund}{Numeric; minimum total abundance per sample to be included. Default \code{10}.}
 
-\item{clustering_cutoff}{Numeric; intra-group clustering threshold applied
-only within each taxon or similarity cluster to remove highly similar ASVs
+\item{taxonomy_cluster_cutoff}{Numeric; intra-group clustering threshold applied
+only within each taxon in taxonomy mode to remove highly similar ASVs
 (e.g., 99.5\\% identity) before diversity computation. Default \code{0.995}.
 This acts as a denoising step to prevent redundant ASVs from inflating π.}
 
-\item{similarity_cutoff}{Numeric or \code{NULL}.
+\item{global_similarity_cutoff}{Numeric or \code{NULL}.
 If set (e.g., \code{0.97}), taxonomy is ignored and ASVs are globally
 clustered based on sequence similarity. Each resulting cluster is treated
 as a “species-like” group for π calculation. The output files will include
 the similarity tag (e.g., \code{_similarity_0.970_}) and a
 \code{cluster_map_similarity_<cutoff>_<date>.csv} with taxonomy annotation.
-When \code{similarity_cutoff} is active, \code{clustering_cutoff} is skipped.}
+When \code{global_similarity_cutoff} is active, \code{taxonomy_cluster_cutoff} is skipped.}
 
 \item{trim_nt}{Integer; number of nucleotides trimmed from both sequence ends
 to remove noisy termini of V3–V4 amplicons. Default \code{8}.}
@@ -90,14 +92,14 @@ Default \code{200}.}
 \value{
 A \code{phyloseq} object identical to the input but with new columns
 added to \code{sample_data(psIN)} for each computed π and ASV count.
-Also writes CSVs and a log file under the date-stamped project directory.
+Also writes CSVs and a log file under the project directory.
 }
 \description{
 For each taxonomic group (or all ASVs), this function:
 \itemize{
 \item extracts ASV sequences (\code{refseq(psIN)} or rownames),
-\item optionally groups ASVs by global sequence similarity (\code{similarity_cutoff}),
-\item clusters intra-group sequences at \code{clustering_cutoff} to remove near-identical ASVs,
+\item optionally groups ASVs by global sequence similarity (\code{global_similarity_cutoff}),
+\item clusters intra-group sequences at \code{taxonomy_cluster_cutoff} to remove near-identical ASVs,
 \item aligns sequences via \code{DECIPHER::AlignSeqs} or external \code{MAFFT},
 \item trims both ends by \code{trim_nt} nt to reduce V3–V4 edge noise,
 \item computes pairwise distances (\code{"simple"} = Hamming; or \code{"nucdiv"} = TN93 model),
@@ -114,12 +116,12 @@ and similarity-based grouping.
 
 \strong{Conceptual difference between cutoffs:}
 \itemize{
-\item \code{similarity_cutoff} — defines global sequence-based grouping
+\item \code{global_similarity_cutoff} — defines global sequence-based grouping
 across all ASVs (taxonomy-free, analogous to ANI dereplication).
 Recommended for species-level clustering (e.g., 0.97).
-\item \code{clustering_cutoff} — defines local denoising within each taxon
-or cluster to merge nearly identical ASVs (e.g., 0.995).
-Used only when \code{similarity_cutoff = NULL}.
+\item \code{taxonomy_cluster_cutoff} — defines local denoising within each taxon
+to merge nearly identical ASVs (e.g., 0.995).
+Used only when \code{global_similarity_cutoff = NULL}.
 }
 
 π (nucleotide diversity) per sample is computed as:
@@ -132,11 +134,11 @@ bootstrap resampling of ASVs within each sample.
 
 The function saves:
 \itemize{
-\item \code{pi_matrix_<method>_<level>_<target>_<date>.csv}
-\item \code{asv_count_matrix_<level>_<target>_<date>.csv}
+\item \code{pi_matrix_<method>_<level-or-mode>_<target>_<date>.csv}
+\item \code{asv_count_matrix_<level-or-mode>_<target>_<date>.csv}
 \item optional \code{pi_ci_low_matrix_*.csv}, \code{pi_ci_high_matrix_*.csv}
 \item text log: \code{pi_log_<method>_<level>_<target>_<date>.txt}
-\item and if \code{similarity_cutoff} is set:
+\item and if \code{global_similarity_cutoff} is set:
 \code{cluster_map_similarity_<cutoff>_<date>.csv}
 }
 
@@ -153,7 +155,7 @@ ps_pi <- Go_intoASV(
   target = "Lactobacillus",
   method = "nucdiv",
   aligner = "DECIPHER",
-  clustering_cutoff = 0.995,
+  taxonomy_cluster_cutoff = 0.995,
   compute_ci = TRUE,
   n_boot = 100
 )
@@ -162,7 +164,7 @@ ps_pi <- Go_intoASV(
 ps_sim <- Go_intoASV(
   psIN = ps,
   project = "Gut16S",
-  similarity_cutoff = 0.97,
+  global_similarity_cutoff = 0.97,
   method = "nucdiv"
 )
 }

@@ -42,8 +42,17 @@ ps <- your_phyloseq_object
 res <- Go_intoASV(
   psIN = ps,
   project = "myproject",
-  clustering_cutoff = 0.995,
-  similarity_cutoff = 0.97,
+  level = "Genus",
+  taxonomy_cluster_cutoff = 0.995,
+  method = "nucdiv",
+  aligner = "DECIPHER",
+  weighting = "entropy"
+)
+
+res_similarity <- Go_intoASV(
+  psIN = ps,
+  project = "myproject",
+  global_similarity_cutoff = 0.97,
   method = "nucdiv",
   aligner = "DECIPHER",
   weighting = "entropy"

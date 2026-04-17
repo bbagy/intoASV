@@ -12,8 +12,8 @@
 #' For each taxonomic group (or all ASVs), this function:
 #' \itemize{
 #'   \item extracts ASV sequences (\code{refseq(psIN)} or rownames),
-#'   \item optionally groups ASVs by global sequence similarity (\code{similarity_cutoff}),
-#'   \item clusters intra-group sequences at \code{clustering_cutoff} to remove near-identical ASVs,
+#'   \item optionally groups ASVs by global sequence similarity (\code{global_similarity_cutoff}),
+#'   \item clusters intra-group sequences at \code{taxonomy_cluster_cutoff} to remove near-identical ASVs,
 #'   \item aligns sequences via \code{DECIPHER::AlignSeqs} or external \code{MAFFT},
 #'   \item trims both ends by \code{trim_nt} nt to reduce V3–V4 edge noise,
 #'   \item computes pairwise distances (\code{"simple"} = Hamming; or \code{"nucdiv"} = TN93 model),
@@ -26,11 +26,11 @@
 #'   optionally DNA sequences in \code{refseq(psIN)}.
 #' @param project Character; project prefix used to create the output directory
 #'   \verb{<project_YYMMDD>/table/pi_tab/}.
-#' @param level Character; taxonomic rank to group ASVs before computing π
-#'   (e.g., \code{"Genus"}, \code{"Family"}). Ignored if \code{similarity_cutoff} is set.
-#'   Default \code{"Genus"}.
+#' @param level Character or \code{NULL}; taxonomic rank to group ASVs before computing π
+#'   (e.g., \code{"Genus"}, \code{"Family"}). Required in taxonomy mode and
+#'   ignored if \code{global_similarity_cutoff} is set. Default \code{NULL}.
 #' @param target Character; a specific taxon (e.g., \code{"Lactobacillus"}) or
-#'   \code{"all"} to compute across all taxa. Ignored if \code{similarity_cutoff} is set.
+#'   \code{"all"} to compute across all taxa. Ignored if \code{global_similarity_cutoff} is set.
 #'   Default \code{"all"}.
 #' @param method Character; one of \code{c("simple","nucdiv")}.
 #'   \code{"simple"} uses per-position Hamming distances, while \code{"nucdiv"}
@@ -40,18 +40,18 @@
 #' @param min_asv Integer; minimum number of ASVs required to compute π. Default \code{3}.
 #' @param min_abund Numeric; minimum total abundance per sample to be included. Default \code{10}.
 #'
-#' @param similarity_cutoff Numeric or \code{NULL}.
+#' @param taxonomy_cluster_cutoff Numeric; intra-group clustering threshold applied
+#'   only within each taxon in taxonomy mode to remove highly similar ASVs
+#'   (e.g., 99.5\% identity) before diversity computation. Default \code{0.995}.
+#'   This acts as a denoising step to prevent redundant ASVs from inflating π.
+#'
+#' @param global_similarity_cutoff Numeric or \code{NULL}.
 #'   If set (e.g., \code{0.97}), taxonomy is ignored and ASVs are globally
 #'   clustered based on sequence similarity. Each resulting cluster is treated
 #'   as a “species-like” group for π calculation. The output files will include
 #'   the similarity tag (e.g., \code{_similarity_0.970_}) and a
 #'   \code{cluster_map_similarity_<cutoff>_<date>.csv} with taxonomy annotation.
-#'   When \code{similarity_cutoff} is active, \code{clustering_cutoff} is skipped.
-#'
-#' @param clustering_cutoff Numeric; intra-group clustering threshold applied
-#'   only within each taxon or similarity cluster to remove highly similar ASVs
-#'   (e.g., 99.5\% identity) before diversity computation. Default \code{0.995}.
-#'   This acts as a denoising step to prevent redundant ASVs from inflating π.
+#'   When \code{global_similarity_cutoff} is active, \code{taxonomy_cluster_cutoff} is skipped.
 #'
 #' @param trim_nt Integer; number of nucleotides trimmed from both sequence ends
 #'   to remove noisy termini of V3–V4 amplicons. Default \code{8}.
@@ -72,12 +72,12 @@
 #' @details
 #' \strong{Conceptual difference between cutoffs:}
 #' \itemize{
-#'   \item \code{similarity_cutoff} — defines global sequence-based grouping
+#'   \item \code{global_similarity_cutoff} — defines global sequence-based grouping
 #'         across all ASVs (taxonomy-free, analogous to ANI dereplication).
 #'         Recommended for species-level clustering (e.g., 0.97).
-#'   \item \code{clustering_cutoff} — defines local denoising within each taxon
-#'         or cluster to merge nearly identical ASVs (e.g., 0.995).
-#'         Used only when \code{similarity_cutoff = NULL}.
+#'   \item \code{taxonomy_cluster_cutoff} — defines local denoising within each taxon
+#'         to merge nearly identical ASVs (e.g., 0.995).
+#'         Used only when \code{global_similarity_cutoff = NULL}.
 #' }
 #'
 #' π (nucleotide diversity) per sample is computed as:
@@ -90,11 +90,11 @@
 #'
 #' The function saves:
 #' \itemize{
-#'   \item \code{pi_matrix_<method>_<level>_<target>_<date>.csv}
-#'   \item \code{asv_count_matrix_<level>_<target>_<date>.csv}
+#'   \item \code{pi_matrix_<method>_<level-or-mode>_<target>_<date>.csv}
+#'   \item \code{asv_count_matrix_<level-or-mode>_<target>_<date>.csv}
 #'   \item optional \code{pi_ci_low_matrix_*.csv}, \code{pi_ci_high_matrix_*.csv}
 #'   \item text log: \code{pi_log_<method>_<level>_<target>_<date>.txt}
-#'   \item and if \code{similarity_cutoff} is set:
+#'   \item and if \code{global_similarity_cutoff} is set:
 #'         \code{cluster_map_similarity_<cutoff>_<date>.csv}
 #' }
 #'
@@ -115,7 +115,7 @@
 #'   target = "Lactobacillus",
 #'   method = "nucdiv",
 #'   aligner = "DECIPHER",
-#'   clustering_cutoff = 0.995,
+#'   taxonomy_cluster_cutoff = 0.995,
 #'   compute_ci = TRUE,
 #'   n_boot = 100
 #' )
@@ -124,7 +124,7 @@
 #' ps_sim <- Go_intoASV(
 #'   psIN = ps,
 #'   project = "Gut16S",
-#'   similarity_cutoff = 0.97,
+#'   global_similarity_cutoff = 0.97,
 #'   method = "nucdiv"
 #' )
 #' }
@@ -142,14 +142,14 @@
 Go_intoASV <- function(
     psIN,
     project,
-    level = "Genus",
+    level = NULL,
     target = "all",
     method = c("simple","nucdiv"),
     aligner = c("DECIPHER","MAFFT"),
     min_asv = 3,
     min_abund = 10,
-    clustering_cutoff = 0.995,     # taxonomy-mode intra-taxon subclustering
-    similarity_cutoff = NULL,      # if set: similarity-based mode (no intra-group subclustering)
+    taxonomy_cluster_cutoff = 0.995,   # taxonomy-mode intra-taxon subclustering
+    global_similarity_cutoff = NULL,   # if set: similarity-based mode (no intra-group subclustering)
     trim_nt = 8,
     distance_gap = c("exclude","include"),
     distance_model = c("raw","JC69"),  # kept for compatibility; nucdiv는 TN93 사용
@@ -157,11 +157,24 @@ Go_intoASV <- function(
     compute_ci = FALSE,
     n_boot = 200,
     seed = 123,
-    n_cores = 4
+    n_cores = 4,
+    clustering_cutoff = NULL,
+    similarity_cutoff = NULL
 ){
 
   start_time <- Sys.time()
   set.seed(seed)
+
+  if (!is.null(clustering_cutoff)) {
+    warning("'clustering_cutoff' is deprecated; use 'taxonomy_cluster_cutoff' instead.",
+            call. = FALSE)
+    taxonomy_cluster_cutoff <- clustering_cutoff
+  }
+  if (!is.null(similarity_cutoff)) {
+    warning("'similarity_cutoff' is deprecated; use 'global_similarity_cutoff' instead.",
+            call. = FALSE)
+    global_similarity_cutoff <- similarity_cutoff
+  }
 
   method         <- match.arg(method)
   aligner        <- match.arg(aligner)
@@ -178,10 +191,11 @@ Go_intoASV <- function(
   # ---------- IO helpers ----------
   sanitize <- function(x) gsub("[^A-Za-z0-9._-]+","_", x)
   safe_target  <- if (identical(target,"all")) "all" else sanitize(trimws(target))
+  level_label <- if (is.null(level)) "NULL" else as.character(level)
 
   # --- 파일명 태그 자동 정의 ---
-  if (!is.null(similarity_cutoff)) {
-    tag_label <- sprintf("similarity_%.3f", similarity_cutoff)
+  if (!is.null(global_similarity_cutoff)) {
+    tag_label <- sprintf("similarity_%.3f", global_similarity_cutoff)
     level_tag <- "Similarity"
     target_tag <- tag_label
   } else {
@@ -197,7 +211,7 @@ Go_intoASV <- function(
                       dir_base, method, level_tag, target_tag, date_tag)
 
   cat(sprintf("[Go_intoASV v13.4] %s | method=%s | level=%s | target=%s\n",
-              Sys.time(), method, level, target),
+              Sys.time(), method, level_label, target),
       file = log_file, append = TRUE)
 
   # ---------- extract tables ----------
@@ -255,13 +269,13 @@ Go_intoASV <- function(
   }
 
   # ---------- grouping: taxonomy vs similarity ----------
-  if (!is.null(similarity_cutoff)) {
+  if (!is.null(global_similarity_cutoff)) {
     message(sprintf(
       "\n[Go_intoASV] Similarity-based mode activated (cutoff = %.3f). 'level' and 'target' will be ignored.\n",
-      similarity_cutoff
+      global_similarity_cutoff
     ))
     cat(sprintf("[Go_intoASV] Similarity mode: cutoff=%.3f | Ignoring level & target\n",
-                similarity_cutoff), file = log_file, append = TRUE)
+                global_similarity_cutoff), file = log_file, append = TRUE)
 
     # 모든 ASV를 대상으로 전역 DistanceMatrix
     seqs_valid <- seqs_all[grepl("^[ACGTN]+$", seqs_all)]
@@ -277,7 +291,7 @@ Go_intoASV <- function(
     )
 
     # ---- base R clustering (average linkage) ----
-    cl_vec <- cluster_from_dm(dm_global, similarity_cutoff)
+    cl_vec <- cluster_from_dm(dm_global, global_similarity_cutoff)
 
     # ---- taxonomy info 추가 ----
     tax_cols <- intersect(c("Phylum","Class","Order","Family","Genus","Species"), colnames(tax_tab))
@@ -291,11 +305,11 @@ Go_intoASV <- function(
 
     write.csv(cluster_map,
               sprintf("%s/cluster_map_similarity_%.3f_%s.csv",
-                      dir_base, similarity_cutoff, date_tag),
+                      dir_base, global_similarity_cutoff, date_tag),
               row.names = FALSE)
 
     cat(sprintf("[Go_intoASV] Similarity mode: cutoff=%.3f | cluster_map with taxonomy saved\n",
-                similarity_cutoff),
+                global_similarity_cutoff),
         file = log_file, append = TRUE)
 
     # similarity 모드에서는 tax_labels = ClusterID
@@ -305,6 +319,12 @@ Go_intoASV <- function(
 
   } else {
     # ---------- regular taxonomy-based mode ----------
+    if (is.null(level) || length(level) != 1L || !nzchar(trimws(level))) {
+      stop("'level' must be provided in taxonomy mode when 'global_similarity_cutoff' is NULL.")
+    }
+    if (!level %in% colnames(tax_tab)) {
+      stop(sprintf("'level' (%s) is not a column in tax_table(psIN).", level))
+    }
     tax_raw <- tax_tab[, level, drop = TRUE]
     tax_raw[is.na(tax_raw)] <- "Unclassified"
     tax_labels <- trimws(tax_raw)
@@ -372,9 +392,9 @@ Go_intoASV <- function(
     # ----- intra-group clustering -----
     # similarity 모드: 전역 cluster_map만 사용, 여기서는 subclustering 금지
     # taxonomy 모드: 예전처럼 clustering_cutoff 기반 largest subcluster only
-    if (is.null(similarity_cutoff) && !is.null(clustering_cutoff)) {
+    if (is.null(global_similarity_cutoff) && !is.null(taxonomy_cluster_cutoff)) {
       dm <- DECIPHER::DistanceMatrix(seqs, includeTerminalGaps = FALSE)
-      cl_vec <- cluster_from_dm(dm, clustering_cutoff)
+      cl_vec <- cluster_from_dm(dm, taxonomy_cluster_cutoff)
       keep_cluster <- names(which.max(table(cl_vec)))
       keep_ids <- names(cl_vec[cl_vec == keep_cluster])
       seqs <- seqs[names(seqs) %in% keep_ids]
@@ -385,7 +405,7 @@ Go_intoASV <- function(
             file = log_file, append = TRUE)
         return(NULL)
       }
-    } else if (!is.null(similarity_cutoff)) {
+    } else if (!is.null(global_similarity_cutoff)) {
       # similarity 모드에서는 서브클러스터링 스킵
       cat(sprintf("Similarity mode active — skipping intra-group clustering for %s\n",
                   target_taxon),
@@ -517,7 +537,7 @@ Go_intoASV <- function(
   }
 
   # similarity 모드가 아닌 경우에만 target 필터 적용
-  if (is.null(similarity_cutoff) && !identical(target,"all")) {
+  if (is.null(global_similarity_cutoff) && !identical(target,"all")) {
     results <- results[trimws(results$Taxon) == trimws(target), , drop = FALSE]
     if (nrow(results) == 0) {
       message("No rows for requested target.")
@@ -531,7 +551,7 @@ Go_intoASV <- function(
   pi_tab   <- as.data.frame(safe_tapply(results$Pi,        results$Sample, results$Taxon, identity))
   asv_tab  <- as.data.frame(safe_tapply(results$ASV_count, results$Sample, results$Taxon, identity))
 
-  if (is.null(similarity_cutoff) && !identical(target,"all")) {
+  if (is.null(global_similarity_cutoff) && !identical(target,"all")) {
     keep <- colnames(pi_tab) %in% trimws(target)
     pi_tab  <- pi_tab[,  keep, drop = FALSE]
     asv_tab <- asv_tab[, keep, drop = FALSE]
@@ -555,9 +575,9 @@ Go_intoASV <- function(
     }
     colnames(ci_low_tab)  <- paste0("pi_CI_low_",  colnames(ci_low_tab))
     colnames(ci_high_tab) <- paste0("pi_CI_high_", colnames(ci_high_tab))
-    write.csv(ci_low_tab,  sprintf("%s/pi_ci_low_matrix_%s_%s_%s.csv",  dir_base, method, level, date_tag),
+    write.csv(ci_low_tab,  sprintf("%s/pi_ci_low_matrix_%s_%s_%s.csv",  dir_base, method, level_tag, date_tag),
               row.names = TRUE, na = "")
-    write.csv(ci_high_tab, sprintf("%s/pi_ci_high_matrix_%s_%s_%s.csv", dir_base, method, level, date_tag),
+    write.csv(ci_high_tab, sprintf("%s/pi_ci_high_matrix_%s_%s_%s.csv", dir_base, method, level_tag, date_tag),
               row.names = TRUE, na = "")
   }
 
