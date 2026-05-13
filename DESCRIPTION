@@ -1,6 +1,8 @@
 Package: intoASV
 Title: Intra-Taxonomic Microdiversity Analysis from ASV Data
 Version: 0.0.0.9000
+Depends:
+    R (>= 4.5.1)
 Authors@R: 
     person("Heekuk", "Park", , "hp2523@cumc.columbia.edu", role = c("aut", "cre"))
 Description: Provides a workflow for quantifying intra-taxonomic
@@ -15,16 +17,19 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
-    phyloseq,
-    DECIPHER,
-    Biostrings,
-    IRanges,
-    pwalign,
-    ape,
-    cluster,
+    phyloseq (>= 1.52.0),
+    DECIPHER (>= 3.4.0),
+    Biostrings (>= 2.76.0),
+    IRanges (>= 2.42.0),
+    pwalign (>= 1.4.0),
+    ape (>= 5.8.1),
+    cluster (>= 2.1.8.2),
     parallel,
-    ggplot2,
-    dplyr,
-    magrittr,
-    pheatmap,
-    Polychrome
+    igraph (>= 2.2.1),
+    ggplot2 (>= 4.0.2),
+    ggrepel (>= 0.9.6),
+    patchwork (>= 1.3.2),
+    dplyr (>= 1.2.1),
+    magrittr (>= 2.0.5),
+    pheatmap (>= 1.0.13),
+    Polychrome (>= 1.5.4)

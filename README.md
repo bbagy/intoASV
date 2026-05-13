@@ -16,9 +16,37 @@ low-biomass and amplicon-based studies.
 
 ## Installation
 
+### Simple install
+
 ```r
-devtools::install_github("bbagy/intoASV") 
+install.packages("remotes")
+remotes::install_github("bbagy/intoASV")
 ```
+
+### Reproducible install
+
+Clone the repository, move into the project directory, restore the
+recorded package environment, and then install the local package source.
+
+```bash
+git clone https://github.com/bbagy/intoASV.git
+cd intoASV
+```
+
+```r
+install.packages("renv")
+renv::restore()
+
+install.packages("devtools")
+devtools::install(".")
+```
+
+`renv::restore()` must be run from the project directory containing
+`renv.lock` (or after `setwd()` to that directory in R).
+
+### Optional external dependency
+
+- `MAFFT` is required only when `aligner = "MAFFT"`.
 
 ---
 

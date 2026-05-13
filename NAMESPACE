@@ -2,6 +2,7 @@
 
 export(Go_clusterDiagnostics)
 export(Go_intoASV)
+export(Go_intoASV_graphs)
 importFrom(Biostrings,DNAStringSet)
 importFrom(Biostrings,letterFrequency)
 importFrom(Biostrings,readDNAStringSet)
