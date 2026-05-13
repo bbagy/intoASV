@@ -21,6 +21,11 @@
 #' @param inset_layout Optional list assigning inset clusters to zoom columns.
 #'   Example: \code{list(zoom1 = c("Cluster_1","Cluster_3"),
 #'   zoom2 = c("Cluster_2","Cluster_4"))}.
+#' @param mainGroup Optional sample metadata variable used to draw up to four
+#'   subgroup sequence-cloud panels in one 2 x 2 comparison image. If
+#'   \code{NULL}, the standard single overview plot is drawn.
+#' @param order Optional character vector controlling the plotting order of
+#'   \code{mainGroup} levels. Values not present in the data are ignored.
 #' @param name Optional output-name suffix, similar to Gotools naming style.
 #' @param width,height Numeric PDF size in inches.
 #'
@@ -49,6 +54,8 @@ Go_intoASV_graphs <- function(
     clusters_per_species = 2,
     max_clusters = 20,
     inset_layout = NULL,
+    mainGroup = NULL,
+    order = NULL,
     name = NULL,
     width = 12,
     height = 8
@@ -178,19 +185,6 @@ Go_intoASV_graphs <- function(
     paste0("similarity", val)
   }
 
-  .unique_file <- function(path) {
-    if (!file.exists(path)) return(path)
-    ext <- tools::file_ext(path)
-    stem <- if (nzchar(ext)) sub(paste0("\\.", ext, "$"), "", path) else path
-    suffix <- if (nzchar(ext)) paste0(".", ext) else ""
-    i <- 1
-    repeat {
-      candidate <- sprintf("%s_%02d%s", stem, i, suffix)
-      if (!file.exists(candidate)) return(candidate)
-      i <- i + 1
-    }
-  }
-
   .escape_regex <- function(x) {
     gsub("([][{}()+*^$|\\\\?.])", "\\\\\\1", x)
   }
@@ -288,10 +282,10 @@ Go_intoASV_graphs <- function(
     stop("[Go_intoASV_graphs] No target clusters selected.")
   }
 
-  .build_intoasv_graph <- function(cluster_id) {
-    otu_tab <- .get_otu_matrix(psIN)
-    tax_tab <- .get_tax_table(psIN)
-    seqs_all <- .get_asv_sequences(psIN)
+  .build_intoasv_graph <- function(cluster_id, ps_obj = psIN) {
+    otu_tab <- .get_otu_matrix(ps_obj)
+    tax_tab <- .get_tax_table(ps_obj)
+    seqs_all <- .get_asv_sequences(ps_obj)
     cm_sub <- cluster_map[cluster_map$ClusterID == cluster_id, , drop = FALSE]
     asv_ids <- intersect(cm_sub$ASV, rownames(otu_tab))
     asv_ids <- intersect(asv_ids, names(seqs_all))
@@ -437,9 +431,15 @@ Go_intoASV_graphs <- function(
     } else {
       NA_character_
     }
+    genus <- if ("Genus" %in% colnames(cloud_obj$nodes)) {
+      names(sort(table(cloud_obj$nodes$Genus), decreasing = TRUE))[1]
+    } else {
+      sub("\\s+.*$", "", species)
+    }
     data.frame(
       ClusterID = cloud_obj$cluster_id,
       Species = species,
+      Genus = genus,
       n_nodes = igraph::vcount(g),
       n_edges = igraph::gsize(g),
       components = igraph::components(g)$no,
@@ -455,48 +455,98 @@ Go_intoASV_graphs <- function(
     )
   }
 
-  graph_list <- list()
-  for (cluster_i in unique(target_clusters$ClusterID)) {
-    graph_i <- .build_intoasv_graph(cluster_i)
-    if (!is.null(graph_i)) graph_list[[cluster_i]] <- graph_i
-  }
-  if (length(graph_list) == 0) stop("[Go_intoASV_graphs] No graph could be built from selected clusters.")
+  .build_cloud_set <- function(ps_obj) {
+    graph_list_i <- list()
+    for (cluster_i in unique(target_clusters$ClusterID)) {
+      graph_i <- .build_intoasv_graph(cluster_i, ps_obj = ps_obj)
+      if (!is.null(graph_i)) graph_list_i[[cluster_i]] <- graph_i
+    }
+    if (length(graph_list_i) == 0) return(NULL)
 
-  sequence_cloud_list <- list()
-  stats_list <- list()
-  for (cluster_i in names(graph_list)) {
-    cloud_i <- .build_sequence_cloud_graph(graph_list[[cluster_i]])
-    if (is.null(cloud_i)) next
-    sequence_cloud_list[[cluster_i]] <- cloud_i
-    stats_list[[cluster_i]] <- .sequence_cloud_stats(cloud_i)
-  }
-  if (length(sequence_cloud_list) == 0) {
-    stop("[Go_intoASV_graphs] No sequence-cloud graph could be built.")
+    sequence_cloud_list_i <- list()
+    stats_list_i <- list()
+    for (cluster_i in names(graph_list_i)) {
+      cloud_i <- .build_sequence_cloud_graph(graph_list_i[[cluster_i]])
+      if (is.null(cloud_i)) next
+      sequence_cloud_list_i[[cluster_i]] <- cloud_i
+      stats_list_i[[cluster_i]] <- .sequence_cloud_stats(cloud_i)
+    }
+    if (length(sequence_cloud_list_i) == 0) return(NULL)
+    list(
+      graph_list = graph_list_i,
+      sequence_cloud_list = sequence_cloud_list_i,
+      stats_df = do.call(rbind, stats_list_i)
+    )
   }
 
-  stats_df <- do.call(rbind, stats_list)
+  cloud_set <- .build_cloud_set(psIN)
+  if (is.null(cloud_set)) stop("[Go_intoASV_graphs] No sequence-cloud graph could be built.")
+  graph_list <- cloud_set$graph_list
+  sequence_cloud_list <- cloud_set$sequence_cloud_list
+  stats_df <- cloud_set$stats_df
+
   utils::write.csv(target_clusters, file.path(dir_base, sprintf("target_clusters_%s.csv", date_tag)), row.names = FALSE)
   utils::write.csv(stats_df, file.path(dir_base, sprintf("sequence_cloud_stats_%s.csv", date_tag)), row.names = FALSE)
 
-  if (is.null(species_palette)) {
-    species_palette <- c(
-      "Lactobacillus iners" = "#3B0F70",
-      "Gardnerella vaginalis" = "#D100B8",
-      "Atopobium vaginae" = "#00A878",
-      "Sneathia amnii" = "#F28E00",
-      "Prevotella amnii" = "#00A6D6",
-      "Mobiluncus curtisii" = "#5A5A5A",
-      "Megasphaera sp" = "#1746FF"
+  .build_genus_palette <- function(stats_df_i) {
+    pal_df <- unique(stats_df_i[, c("Species", "Genus"), drop = FALSE])
+    pal_df <- pal_df[!is.na(pal_df$Species) & nzchar(pal_df$Species), , drop = FALSE]
+    pal_df$Genus[is.na(pal_df$Genus) | !nzchar(pal_df$Genus)] <- sub("\\s+.*$", "", pal_df$Species[is.na(pal_df$Genus) | !nzchar(pal_df$Genus)])
+    pal_df <- pal_df[order(pal_df$Genus, pal_df$Species), , drop = FALSE]
+    genera <- sort(unique(pal_df$Genus))
+    high_contrast <- c(
+      "#3B0F70", "#D55E00", "#0072B2", "#009E73", "#CC79A7",
+      "#E69F00", "#56B4E9", "#8C564B", "#BDBD00", "#6A3D9A",
+      "#E31A1C", "#1B9E77", "#7570B3", "#A6761D", "#666666"
     )
-    missing_species <- setdiff(sort(unique(stats_df$Species)), names(species_palette))
-    if (length(missing_species) > 0) {
-      extra_cols <- grDevices::hcl.colors(length(missing_species), "Dark 3")
-      species_palette <- c(species_palette, stats::setNames(extra_cols, missing_species))
+    if (length(genera) <= length(high_contrast)) {
+      base_cols <- high_contrast[seq_along(genera)]
+    } else {
+      base_cols <- c(
+        high_contrast,
+        grDevices::hcl.colors(length(genera) - length(high_contrast), "Dynamic")
+      )
     }
+    genus_base <- stats::setNames(base_cols, genera)
+    species_cols <- unlist(lapply(genera, function(genus_i) {
+      species_i <- sort(unique(pal_df$Species[pal_df$Genus == genus_i]))
+      n_i <- length(species_i)
+      base_i <- grDevices::col2rgb(genus_base[[genus_i]])[, 1] / 255
+      mix_vals <- if (n_i == 1) 0 else seq(0, 0.42, length.out = n_i)
+      cols_i <- vapply(seq_along(species_i), function(j) {
+        rgb_i <- base_i * (1 - mix_vals[j]) + c(1, 1, 1) * mix_vals[j]
+        grDevices::rgb(rgb_i[1], rgb_i[2], rgb_i[3])
+      }, character(1))
+      stats::setNames(cols_i, species_i)
+    }))
+    species_cols
+  }
+
+  if (is.null(species_palette)) {
+    species_palette <- .build_genus_palette(stats_df)
   }
 
   plot_files <- list()
   plot_objs <- list()
+  main_group_levels <- NULL
+  if (!is.null(mainGroup)) {
+    sample_df_for_levels <- data.frame(phyloseq::sample_data(psIN))
+    if (!mainGroup %in% colnames(sample_df_for_levels)) {
+      stop("[Go_intoASV_graphs] mainGroup was not found in sample_data: ", mainGroup)
+    }
+    main_group_levels <- unique(as.character(sample_df_for_levels[[mainGroup]]))
+    main_group_levels <- main_group_levels[!is.na(main_group_levels) & nzchar(main_group_levels)]
+    if (!is.null(order)) {
+      main_group_levels <- c(
+        intersect(as.character(order), main_group_levels),
+        setdiff(main_group_levels, as.character(order))
+      )
+    }
+    if (length(main_group_levels) > 4) {
+      warning("[Go_intoASV_graphs] mainGroup has more than four groups; only the first four will be plotted.")
+      main_group_levels <- main_group_levels[seq_len(4)]
+    }
+  }
 
   for (layout_i in c("sequence", "cloud")) {
     cluster_layout <- ifelse(layout_i == "sequence", "transformed_mds", "equal_circle")
@@ -513,11 +563,19 @@ Go_intoASV_graphs <- function(
     weighting_tag <- .extract_weighting(c(project, cluster_map_file))
     similarity_tag <- .extract_similarity(c(project, cluster_map_file))
     name_tag <- .safe_file_token(name)
-    file_tokens <- c("sequence_cloud", layout_i, weighting_tag, similarity_tag, name_tag, date_tag)
+    main_group_tag <- if (is.null(mainGroup)) {
+      NA_character_
+    } else {
+      paste(c(.safe_file_token(mainGroup), vapply(main_group_levels, .safe_file_token, character(1))), collapse = "_")
+    }
+    file_tokens <- c("sequence_cloud", layout_i, weighting_tag, similarity_tag, main_group_tag, name_tag, date_tag)
     file_tokens <- file_tokens[!is.na(file_tokens) & nzchar(file_tokens)]
-    plot_file <- .unique_file(file.path(dir_base, paste0(paste(file_tokens, collapse = "_"), ".pdf")))
+    plot_file <- file.path(dir_base, paste0(paste(file_tokens, collapse = "_"), ".pdf"))
     plot_obj <- NULL
 
+    .draw_one <- function(sequence_cloud_list_i, panel_label = NULL, zoom_side = "right", show_legend = TRUE) {
+    sequence_cloud_list <- sequence_cloud_list_i
+    inset_clusters <- NULL
     cloud_names <- names(sequence_cloud_list)
     cloud_stats <- do.call(rbind, lapply(sequence_cloud_list, .sequence_cloud_stats))
     cloud_stats <- cloud_stats[match(cloud_names, cloud_stats$ClusterID), , drop = FALSE]
@@ -607,6 +665,8 @@ Go_intoASV_graphs <- function(
     })
     legend_labels <- sprintf("%s (%s)", names(legend_labels), unname(legend_labels))
     names(legend_labels) <- names(tapply(overview_nodes$ClusterID, overview_nodes$SpeciesLabel, length))
+    if (length(legend_labels) > 30) legend_labels <- legend_labels[seq_len(30)]
+    legend_cols <- min(5, max(1, ceiling(length(legend_labels) / 6)))
 
     main_p <- ggplot2::ggplot() +
       ggplot2::geom_segment(
@@ -638,21 +698,27 @@ Go_intoASV_graphs <- function(
       ggplot2::coord_equal(xlim = c(-axis_limit, axis_limit), ylim = c(-axis_limit, axis_limit), clip = "off") +
       ggplot2::theme_void(base_size = 11) +
       ggplot2::theme(
-        legend.position = "inside",
-        legend.position.inside = c(0.02, 0.02),
-        legend.justification = c(0, 0),
-        legend.direction = "vertical",
+        legend.position = if (isTRUE(show_legend)) "bottom" else "none",
+        legend.justification = c(0.5, 0),
+        legend.direction = "horizontal",
         legend.background = ggplot2::element_rect(fill = "white", color = NA),
         legend.title = ggplot2::element_blank(),
-        legend.text = ggplot2::element_text(size = 7.2, face = "italic"),
-        legend.key.size = grid::unit(3.5, "mm"),
+        legend.text = ggplot2::element_text(size = 6.5, face = "italic"),
+        legend.key.size = grid::unit(3.0, "mm"),
         plot.margin = ggplot2::margin(0, 0, 0, 0),
-        plot.title = ggplot2::element_text(face = "bold", size = 18, hjust = 0.5, margin = ggplot2::margin(b = 0)),
-        plot.subtitle = ggplot2::element_text(size = 9.5, hjust = 0.5, margin = ggplot2::margin(b = 0))
+        plot.title = ggplot2::element_text(face = "bold", size = ifelse(is.null(panel_label), 18, 11), hjust = 0.5, margin = ggplot2::margin(b = 0)),
+        plot.subtitle = ggplot2::element_text(size = ifelse(is.null(panel_label), 9.5, 6.5), hjust = 0.5, margin = ggplot2::margin(b = 0))
       ) +
-      ggplot2::guides(fill = ggplot2::guide_legend(ncol = 1), color = "none") +
+      ggplot2::guides(
+        fill = ggplot2::guide_legend(
+          ncol = legend_cols,
+          byrow = TRUE,
+          override.aes = list(size = 4.2, alpha = 1, stroke = 0.15)
+        ),
+        color = "none"
+      ) +
       ggplot2::labs(
-        title = plot_title,
+        title = ifelse(is.null(panel_label), plot_title, paste0(plot_title, " | ", panel_label)),
         subtitle = plot_subtitle
       )
 
@@ -735,7 +801,7 @@ Go_intoASV_graphs <- function(
         ggplot2::coord_equal(clip = "off") +
         ggplot2::theme_void(base_size = 8) +
         ggplot2::theme(
-          plot.background = ggplot2::element_rect(fill = "white", color = "black", linewidth = 0.75),
+          plot.background = ggplot2::element_rect(fill = "white", color = "grey75", linewidth = 0.25),
           panel.background = ggplot2::element_rect(fill = "white", color = NA),
           plot.margin = ggplot2::margin(5, 5, 5, 5),
           plot.title = ggplot2::element_text(face = "bold.italic", size = 8.5, hjust = 0.5),
@@ -743,7 +809,7 @@ Go_intoASV_graphs <- function(
         ) +
         ggplot2::labs(
           title = stats_i$Species,
-          subtitle = sprintf("%s | disp=%.2f mod=%.2f", cl, stats_i$cloud_dispersion, stats_i$modularity)
+          subtitle = sprintf("%s\ndisp=%.2f mod=%.2f", cl, stats_i$cloud_dispersion, stats_i$modularity)
         )
       p_inset
     })
@@ -768,11 +834,43 @@ Go_intoASV_graphs <- function(
       } else {
         zoom_panel <- patchwork::wrap_plots(inset_plots, ncol = 1)
       }
-      plot_obj <- main_p | zoom_panel
       zoom_width <- if (!is.null(inset_layout)) max(1.15, 0.95 * length(inset_layout)) else 1.15
-      plot_obj <- plot_obj + patchwork::plot_layout(widths = c(4.2, zoom_width))
+      if (identical(zoom_side, "left")) {
+        plot_obj <- patchwork::wrap_plots(list(zoom_panel, main_p), ncol = 2, widths = c(zoom_width, 4.2))
+      } else {
+        plot_obj <- patchwork::wrap_plots(list(main_p, zoom_panel), ncol = 2, widths = c(4.2, zoom_width))
+      }
     } else {
       plot_obj <- main_p
+    }
+    plot_obj
+    }
+    if (is.null(mainGroup)) {
+      plot_obj <- .draw_one(sequence_cloud_list, panel_label = NULL, zoom_side = "right", show_legend = TRUE)
+    } else {
+      sample_df <- data.frame(phyloseq::sample_data(psIN))
+      group_levels <- main_group_levels
+      group_plots <- lapply(seq_along(group_levels), function(i) {
+        grp <- group_levels[i]
+        keep_samples <- rownames(sample_df)[as.character(sample_df[[mainGroup]]) == grp]
+        ps_grp <- phyloseq::prune_samples(keep_samples, psIN)
+        ps_grp <- phyloseq::prune_taxa(phyloseq::taxa_sums(ps_grp) > 0, ps_grp)
+        cloud_set_grp <- .build_cloud_set(ps_grp)
+        if (is.null(cloud_set_grp)) return(NULL)
+        .draw_one(
+          cloud_set_grp$sequence_cloud_list,
+          panel_label = paste0(mainGroup, ": ", grp),
+          zoom_side = ifelse(i %% 2 == 1, "left", "right"),
+          show_legend = TRUE
+        )
+      })
+      group_plots <- group_plots[!vapply(group_plots, is.null, logical(1))]
+      if (length(group_plots) == 0) stop("[Go_intoASV_graphs] No mainGroup panel could be built.")
+      panel_n <- length(group_plots)
+      panel_ncol <- ifelse(panel_n == 1, 1, 2)
+      panel_nrow <- ceiling(panel_n / panel_ncol)
+      plot_obj <- patchwork::wrap_plots(group_plots, ncol = panel_ncol, nrow = panel_nrow, guides = "collect") &
+        ggplot2::theme(legend.position = "bottom")
     }
     ggplot2::ggsave(plot_file, plot_obj, width = width, height = height)
     plot_files[[layout_i]] <- plot_file
