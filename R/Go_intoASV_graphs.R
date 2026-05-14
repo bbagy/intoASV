@@ -106,7 +106,7 @@ Go_intoASV_graphs <- function(
   # 0. Output directory structure
   ###############################################
   date_tag <- format(Sys.Date(), "%y%m%d")
-  dir_base <- sprintf("%s_%s/intoASV/sequence_cluoud", project, date_tag)
+  dir_base <- sprintf("%s_%s/intoASV/sequence_cloud", project, date_tag)
   dir.create(dir_base, recursive = TRUE, showWarnings = FALSE)
 
   .rescale <- function(x, to, from = range(x, na.rm = TRUE)) {
@@ -548,6 +548,36 @@ Go_intoASV_graphs <- function(
     }
   }
 
+  group_cloud_sets <- NULL
+  group_stats_df   <- NULL
+  if (!is.null(mainGroup)) {
+    sample_df  <- data.frame(phyloseq::sample_data(psIN))
+    group_levels <- main_group_levels
+    group_cloud_sets <- lapply(group_levels, function(grp) {
+      keep_samples <- rownames(sample_df)[as.character(sample_df[[mainGroup]]) == grp]
+      ps_grp <- phyloseq::prune_samples(keep_samples, psIN)
+      ps_grp <- phyloseq::prune_taxa(phyloseq::taxa_sums(ps_grp) > 0, ps_grp)
+      .build_cloud_set(ps_grp)
+    })
+    names(group_cloud_sets) <- group_levels
+    group_cloud_sets <- group_cloud_sets[!vapply(group_cloud_sets, is.null, logical(1))]
+    group_levels <- names(group_cloud_sets)
+
+    stats_per_group <- lapply(names(group_cloud_sets), function(grp) {
+      df <- group_cloud_sets[[grp]]$stats_df
+      df[[mainGroup]] <- grp
+      df
+    })
+    if (length(stats_per_group) > 0) {
+      group_stats_df <- do.call(rbind, stats_per_group)
+      utils::write.csv(
+        group_stats_df,
+        file.path(dir_base, sprintf("sequence_cloud_stats_%s_%s.csv", mainGroup, date_tag)),
+        row.names = FALSE
+      )
+    }
+  }
+
   for (layout_i in c("sequence", "cloud")) {
     cluster_layout <- ifelse(layout_i == "sequence", "transformed_mds", "equal_circle")
     plot_title <- ifelse(
@@ -691,8 +721,8 @@ Go_intoASV_graphs <- function(
     }
 
     main_p <- main_p +
-      ggplot2::scale_color_manual(values = species_palette, labels = legend_labels, na.value = "grey65") +
-      ggplot2::scale_fill_manual(values = species_palette, labels = legend_labels, na.value = "grey65") +
+      ggplot2::scale_color_manual(values = species_palette, breaks = names(legend_labels), labels = legend_labels, na.value = "grey65") +
+      ggplot2::scale_fill_manual(values = species_palette, breaks = names(legend_labels), labels = legend_labels, na.value = "grey65") +
       ggplot2::scale_alpha(range = edge_alpha_range, guide = "none") +
       ggplot2::scale_size_continuous(range = node_size_range, trans = "sqrt", guide = "none") +
       ggplot2::coord_equal(xlim = c(-axis_limit, axis_limit), ylim = c(-axis_limit, axis_limit), clip = "off") +
@@ -809,7 +839,7 @@ Go_intoASV_graphs <- function(
         ) +
         ggplot2::labs(
           title = stats_i$Species,
-          subtitle = sprintf("%s\ndisp=%.2f mod=%.2f", cl, stats_i$cloud_dispersion, stats_i$modularity)
+          subtitle = sprintf("%s (ASV n=%s)\ndisp=%.2f mod=%.2f", cl, stats_i$n_nodes, stats_i$cloud_dispersion, stats_i$modularity)
         )
       p_inset
     })
@@ -848,28 +878,21 @@ Go_intoASV_graphs <- function(
     if (is.null(mainGroup)) {
       plot_obj <- .draw_one(sequence_cloud_list, panel_label = NULL, zoom_side = "right", show_legend = TRUE)
     } else {
-      sample_df <- data.frame(phyloseq::sample_data(psIN))
-      group_levels <- main_group_levels
-      group_plots <- lapply(seq_along(group_levels), function(i) {
+      group_plots_i <- lapply(seq_along(group_levels), function(i) {
         grp <- group_levels[i]
-        keep_samples <- rownames(sample_df)[as.character(sample_df[[mainGroup]]) == grp]
-        ps_grp <- phyloseq::prune_samples(keep_samples, psIN)
-        ps_grp <- phyloseq::prune_taxa(phyloseq::taxa_sums(ps_grp) > 0, ps_grp)
-        cloud_set_grp <- .build_cloud_set(ps_grp)
-        if (is.null(cloud_set_grp)) return(NULL)
         .draw_one(
-          cloud_set_grp$sequence_cloud_list,
+          group_cloud_sets[[grp]]$sequence_cloud_list,
           panel_label = paste0(mainGroup, ": ", grp),
           zoom_side = ifelse(i %% 2 == 1, "left", "right"),
           show_legend = TRUE
         )
       })
-      group_plots <- group_plots[!vapply(group_plots, is.null, logical(1))]
-      if (length(group_plots) == 0) stop("[Go_intoASV_graphs] No mainGroup panel could be built.")
-      panel_n <- length(group_plots)
+      group_plots_i <- group_plots_i[!vapply(group_plots_i, is.null, logical(1))]
+      if (length(group_plots_i) == 0) stop("[Go_intoASV_graphs] No mainGroup panel could be built.")
+      panel_n <- length(group_plots_i)
       panel_ncol <- ifelse(panel_n == 1, 1, 2)
       panel_nrow <- ceiling(panel_n / panel_ncol)
-      plot_obj <- patchwork::wrap_plots(group_plots, ncol = panel_ncol, nrow = panel_nrow, guides = "collect") &
+      plot_obj <- patchwork::wrap_plots(group_plots_i, ncol = panel_ncol, nrow = panel_nrow, guides = "collect") &
         ggplot2::theme(legend.position = "bottom")
     }
     ggplot2::ggsave(plot_file, plot_obj, width = width, height = height)
@@ -883,8 +906,10 @@ Go_intoASV_graphs <- function(
     graph_list = graph_list,
     sequence_cloud_list = sequence_cloud_list,
     sequence_cloud_stats = stats_df,
+    group_stats = group_stats_df,
     plot = plot_objs,
     plot_file = plot_files,
+    mainGroup_stats = group_stats_df,
     dir_base = dir_base,
     cluster_map_file = cluster_map_file
   ))
