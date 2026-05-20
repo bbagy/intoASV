@@ -526,6 +526,67 @@ Go_intoASV_graphs <- function(
     species_palette <- .build_genus_palette(stats_df)
   }
 
+  .compute_centers <- function(sequence_cloud_list_i, cluster_layout_i) {
+    cloud_names_i <- names(sequence_cloud_list_i)
+    cloud_stats_i <- do.call(rbind, lapply(sequence_cloud_list_i, .sequence_cloud_stats))
+    cloud_stats_i <- cloud_stats_i[match(cloud_names_i, cloud_stats_i$ClusterID), , drop = FALSE]
+    angles_i <- seq(pi / 2, pi / 2 + 2 * pi, length.out = length(cloud_names_i) + 1)[-length(cloud_names_i) - 1]
+
+    if (identical(cluster_layout_i, "transformed_mds") && length(cloud_names_i) >= 3) {
+      all_node_df_i <- do.call(rbind, lapply(cloud_names_i, function(cl) {
+        nodes <- sequence_cloud_list_i[[cl]]$nodes
+        data.frame(
+          ClusterID = cl,
+          name = nodes$name,
+          sequence = nodes$sequence,
+          stringsAsFactors = FALSE
+        )
+      }))
+      all_node_df_i <- all_node_df_i[!is.na(all_node_df_i$sequence) & nchar(all_node_df_i$sequence) > 0, , drop = FALSE]
+      seq_vec_i <- stats::setNames(all_node_df_i$sequence, paste(all_node_df_i$ClusterID, all_node_df_i$name, sep = "__"))
+      dna_i <- Biostrings::DNAStringSet(seq_vec_i)
+      all_dm_i <- as.matrix(DECIPHER::DistanceMatrix(dna_i, includeTerminalGaps = FALSE))
+      cl_dist_i <- matrix(0, nrow = length(cloud_names_i), ncol = length(cloud_names_i), dimnames = list(cloud_names_i, cloud_names_i))
+      for (i in seq_along(cloud_names_i)) {
+        for (j in seq_along(cloud_names_i)) {
+          if (i >= j) next
+          keys_i <- names(seq_vec_i)[all_node_df_i$ClusterID == cloud_names_i[i]]
+          keys_j <- names(seq_vec_i)[all_node_df_i$ClusterID == cloud_names_i[j]]
+          d_ij <- mean(all_dm_i[keys_i, keys_j, drop = FALSE], na.rm = TRUE)
+          cl_dist_i[i, j] <- d_ij
+          cl_dist_i[j, i] <- d_ij
+        }
+      }
+      cl_dist_t_i <- .transform_distance(cl_dist_i)
+      diag(cl_dist_t_i) <- 0
+      mds_i <- stats::cmdscale(stats::as.dist(cl_dist_t_i), k = 2)
+      if (is.null(mds_i) || any(!is.finite(mds_i))) {
+        centers_i <- data.frame(ClusterID = cloud_names_i, cx = cluster_center_radius * cos(angles_i), cy = cluster_center_radius * sin(angles_i))
+      } else {
+        centers_i <- data.frame(ClusterID = rownames(mds_i), cx = mds_i[, 1], cy = mds_i[, 2], stringsAsFactors = FALSE)
+        centers_i$cx <- centers_i$cx - mean(centers_i$cx, na.rm = TRUE)
+        centers_i$cy <- centers_i$cy - mean(centers_i$cy, na.rm = TRUE)
+        max_r_i <- max(sqrt(centers_i$cx^2 + centers_i$cy^2), na.rm = TRUE)
+        if (is.finite(max_r_i) && max_r_i > 0) {
+          centers_i$cx <- centers_i$cx / max_r_i * cluster_center_radius
+          centers_i$cy <- centers_i$cy / max_r_i * cluster_center_radius
+        }
+        centers_i <- centers_i[match(cloud_names_i, centers_i$ClusterID), , drop = FALSE]
+      }
+    } else if (identical(cluster_layout_i, "equal_circle")) {
+      centers_i <- data.frame(ClusterID = cloud_names_i, cx = cluster_center_radius * cos(angles_i), cy = cluster_center_radius * sin(angles_i))
+    } else {
+      radius_i <- .rescale(cloud_stats_i$mean_pairwise_distance, to = cluster_radius_range)
+      centers_i <- data.frame(ClusterID = cloud_names_i, cx = radius_i * cos(angles_i), cy = radius_i * sin(angles_i))
+    }
+
+    list(
+      centers = centers_i,
+      cloud_names = cloud_names_i,
+      cloud_stats = cloud_stats_i
+    )
+  }
+
   plot_files <- list()
   plot_objs <- list()
   main_group_levels <- NULL
@@ -603,63 +664,17 @@ Go_intoASV_graphs <- function(
     plot_file <- file.path(dir_base, paste0(paste(file_tokens, collapse = "_"), ".pdf"))
     plot_obj <- NULL
 
-    .draw_one <- function(sequence_cloud_list_i, panel_label = NULL, zoom_side = "right", show_legend = TRUE) {
+    .draw_one <- function(sequence_cloud_list_i, panel_label = NULL, zoom_side = "right", show_legend = TRUE, center_map = NULL, cluster_order = NULL, return_parts = FALSE) {
     sequence_cloud_list <- sequence_cloud_list_i
     inset_clusters <- NULL
-    cloud_names <- names(sequence_cloud_list)
+    cloud_names <- if (is.null(cluster_order)) names(sequence_cloud_list) else intersect(cluster_order, names(sequence_cloud_list))
+    sequence_cloud_list <- sequence_cloud_list[cloud_names]
     cloud_stats <- do.call(rbind, lapply(sequence_cloud_list, .sequence_cloud_stats))
     cloud_stats <- cloud_stats[match(cloud_names, cloud_stats$ClusterID), , drop = FALSE]
-
-    angles <- seq(pi / 2, pi / 2 + 2 * pi, length.out = length(cloud_names) + 1)[-length(cloud_names) - 1]
-    if (identical(cluster_layout, "transformed_mds") && length(cloud_names) >= 3) {
-      all_node_df <- do.call(rbind, lapply(cloud_names, function(cl) {
-        nodes <- sequence_cloud_list[[cl]]$nodes
-        data.frame(
-          ClusterID = cl,
-          name = nodes$name,
-          sequence = nodes$sequence,
-          stringsAsFactors = FALSE
-        )
-      }))
-      all_node_df <- all_node_df[!is.na(all_node_df$sequence) & nchar(all_node_df$sequence) > 0, , drop = FALSE]
-      seq_vec <- stats::setNames(all_node_df$sequence, paste(all_node_df$ClusterID, all_node_df$name, sep = "__"))
-      dna <- Biostrings::DNAStringSet(seq_vec)
-      all_dm <- as.matrix(DECIPHER::DistanceMatrix(dna, includeTerminalGaps = FALSE))
-      cl_dist <- matrix(0, nrow = length(cloud_names), ncol = length(cloud_names),
-                        dimnames = list(cloud_names, cloud_names))
-      for (i in seq_along(cloud_names)) {
-        for (j in seq_along(cloud_names)) {
-          if (i >= j) next
-          keys_i <- names(seq_vec)[all_node_df$ClusterID == cloud_names[i]]
-          keys_j <- names(seq_vec)[all_node_df$ClusterID == cloud_names[j]]
-          d_ij <- mean(all_dm[keys_i, keys_j, drop = FALSE], na.rm = TRUE)
-          cl_dist[i, j] <- d_ij
-          cl_dist[j, i] <- d_ij
-        }
-      }
-      cl_dist_t <- .transform_distance(cl_dist)
-      diag(cl_dist_t) <- 0
-      mds <- stats::cmdscale(stats::as.dist(cl_dist_t), k = 2)
-      if (is.null(mds) || any(!is.finite(mds))) {
-        radius <- rep(cluster_center_radius, length(cloud_names))
-        centers <- data.frame(ClusterID = cloud_names, cx = radius * cos(angles), cy = radius * sin(angles))
-      } else {
-        centers <- data.frame(ClusterID = rownames(mds), cx = mds[, 1], cy = mds[, 2], stringsAsFactors = FALSE)
-        centers$cx <- centers$cx - mean(centers$cx, na.rm = TRUE)
-        centers$cy <- centers$cy - mean(centers$cy, na.rm = TRUE)
-        max_r <- max(sqrt(centers$cx^2 + centers$cy^2), na.rm = TRUE)
-        if (is.finite(max_r) && max_r > 0) {
-          centers$cx <- centers$cx / max_r * cluster_center_radius
-          centers$cy <- centers$cy / max_r * cluster_center_radius
-        }
-        centers <- centers[match(cloud_names, centers$ClusterID), , drop = FALSE]
-      }
-    } else if (identical(cluster_layout, "equal_circle")) {
-      radius <- rep(cluster_center_radius, length(cloud_names))
-      centers <- data.frame(ClusterID = cloud_names, cx = radius * cos(angles), cy = radius * sin(angles))
+    if (is.null(center_map)) {
+      centers <- .compute_centers(sequence_cloud_list, cluster_layout)$centers
     } else {
-      radius <- .rescale(cloud_stats$mean_pairwise_distance, to = cluster_radius_range)
-      centers <- data.frame(ClusterID = cloud_names, cx = radius * cos(angles), cy = radius * sin(angles))
+      centers <- center_map[match(cloud_names, center_map$ClusterID), , drop = FALSE]
     }
 
     overview_nodes <- do.call(rbind, lapply(cloud_names, function(cl) {
@@ -845,6 +860,8 @@ Go_intoASV_graphs <- function(
     })
     names(inset_plots) <- inset_clusters
 
+    zoom_panel <- NULL
+    zoom_width <- 0
     if (length(inset_plots) > 0) {
       if (!is.null(inset_layout)) {
         if (!is.list(inset_layout)) {
@@ -873,27 +890,80 @@ Go_intoASV_graphs <- function(
     } else {
       plot_obj <- main_p
     }
+    if (isTRUE(return_parts)) {
+      return(list(
+        main = main_p,
+        zoom = zoom_panel,
+        zoom_width = zoom_width,
+        combined = plot_obj
+      ))
+    }
     plot_obj
     }
     if (is.null(mainGroup)) {
       plot_obj <- .draw_one(sequence_cloud_list, panel_label = NULL, zoom_side = "right", show_legend = TRUE)
     } else {
-      group_plots_i <- lapply(seq_along(group_levels), function(i) {
-        grp <- group_levels[i]
-        .draw_one(
-          group_cloud_sets[[grp]]$sequence_cloud_list,
-          panel_label = paste0(mainGroup, ": ", grp),
-          zoom_side = ifelse(i %% 2 == 1, "left", "right"),
-          show_legend = TRUE
+      shared_center_info <- if (length(group_levels) == 2) .compute_centers(sequence_cloud_list, cluster_layout) else NULL
+      if (length(group_levels) == 2) {
+        left_parts <- .draw_one(
+          group_cloud_sets[[group_levels[1]]]$sequence_cloud_list,
+          panel_label = paste0(mainGroup, ": ", group_levels[1]),
+          zoom_side = "left",
+          show_legend = TRUE,
+          center_map = if (is.null(shared_center_info)) NULL else shared_center_info$centers,
+          cluster_order = if (is.null(shared_center_info)) NULL else shared_center_info$cloud_names,
+          return_parts = TRUE
         )
-      })
-      group_plots_i <- group_plots_i[!vapply(group_plots_i, is.null, logical(1))]
-      if (length(group_plots_i) == 0) stop("[Go_intoASV_graphs] No mainGroup panel could be built.")
-      panel_n <- length(group_plots_i)
-      panel_ncol <- ifelse(panel_n == 1, 1, 2)
-      panel_nrow <- ceiling(panel_n / panel_ncol)
-      plot_obj <- patchwork::wrap_plots(group_plots_i, ncol = panel_ncol, nrow = panel_nrow, guides = "collect") &
-        ggplot2::theme(legend.position = "bottom")
+        right_parts <- .draw_one(
+          group_cloud_sets[[group_levels[2]]]$sequence_cloud_list,
+          panel_label = paste0(mainGroup, ": ", group_levels[2]),
+          zoom_side = "right",
+          show_legend = TRUE,
+          center_map = if (is.null(shared_center_info)) NULL else shared_center_info$centers,
+          cluster_order = if (is.null(shared_center_info)) NULL else shared_center_info$cloud_names,
+          return_parts = TRUE
+        )
+
+        bilateral_parts <- list()
+        bilateral_widths <- numeric()
+        if (!is.null(left_parts$zoom)) {
+          bilateral_parts <- c(bilateral_parts, list(left_parts$zoom))
+          bilateral_widths <- c(bilateral_widths, left_parts$zoom_width)
+        }
+        bilateral_parts <- c(bilateral_parts, list(left_parts$main, right_parts$main))
+        bilateral_widths <- c(bilateral_widths, 4.2, 4.2)
+        if (!is.null(right_parts$zoom)) {
+          bilateral_parts <- c(bilateral_parts, list(right_parts$zoom))
+          bilateral_widths <- c(bilateral_widths, right_parts$zoom_width)
+        }
+
+        plot_obj <- patchwork::wrap_plots(
+          bilateral_parts,
+          ncol = length(bilateral_parts),
+          widths = bilateral_widths,
+          guides = "collect"
+        ) &
+          ggplot2::theme(legend.position = "bottom")
+      } else {
+        group_plots_i <- lapply(seq_along(group_levels), function(i) {
+          grp <- group_levels[i]
+          .draw_one(
+            group_cloud_sets[[grp]]$sequence_cloud_list,
+            panel_label = paste0(mainGroup, ": ", grp),
+            zoom_side = ifelse(i %% 2 == 1, "left", "right"),
+            show_legend = TRUE,
+            center_map = if (is.null(shared_center_info)) NULL else shared_center_info$centers,
+            cluster_order = if (is.null(shared_center_info)) NULL else shared_center_info$cloud_names
+          )
+        })
+        group_plots_i <- group_plots_i[!vapply(group_plots_i, is.null, logical(1))]
+        if (length(group_plots_i) == 0) stop("[Go_intoASV_graphs] No mainGroup panel could be built.")
+        panel_n <- length(group_plots_i)
+        panel_ncol <- ifelse(panel_n == 1, 1, 2)
+        panel_nrow <- ceiling(panel_n / panel_ncol)
+        plot_obj <- patchwork::wrap_plots(group_plots_i, ncol = panel_ncol, nrow = panel_nrow, guides = "collect") &
+          ggplot2::theme(legend.position = "bottom")
+      }
     }
     ggplot2::ggsave(plot_file, plot_obj, width = width, height = height)
     plot_files[[layout_i]] <- plot_file
