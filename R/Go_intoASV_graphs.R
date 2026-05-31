@@ -80,7 +80,8 @@ Go_intoASV_graphs <- function(
     node_stroke = 0.04,
     edge_alpha_range = c(0.12, 0.55),
     inset_node_size_range = c(1.60, 6.50),
-    inset_edge_width_range = c(0.06, 0.42)
+    inset_edge_width_range = c(0.06, 0.42),
+    seed = 123
   )
 
   species_palette <- NULL
@@ -101,6 +102,23 @@ Go_intoASV_graphs <- function(
   edge_alpha_range <- settings$edge_alpha_range
   inset_node_size_range <- settings$inset_node_size_range
   inset_edge_width_range <- settings$inset_edge_width_range
+  seed <- settings$seed
+
+  old_seed <- if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+    get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  } else {
+    NULL
+  }
+  on.exit({
+    if (is.null(old_seed)) {
+      if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+        rm(".Random.seed", envir = .GlobalEnv)
+      }
+    } else {
+      assign(".Random.seed", old_seed, envir = .GlobalEnv)
+    }
+  }, add = TRUE)
+  set.seed(seed)
 
   ###############################################
   # 0. Output directory structure
@@ -387,6 +405,7 @@ Go_intoASV_graphs <- function(
       igraph::E(cloud_g)$edge_type <- edge_df$edge_type
     }
 
+    set.seed(seed)
     comm <- tryCatch(
       igraph::cluster_louvain(cloud_g, weights = igraph::E(cloud_g)$inv_distance),
       error = function(e) NULL
@@ -398,6 +417,7 @@ Go_intoASV_graphs <- function(
     }
     nodes$cloud_module <- as.character(igraph::V(cloud_g)$cloud_module[match(nodes$name, igraph::V(cloud_g)$name)])
 
+    set.seed(seed)
     layout <- igraph::layout_with_fr(cloud_g, weights = igraph::E(cloud_g)$inv_distance, niter = 1000)
     colnames(layout) <- c("x", "y")
     layout <- as.data.frame(layout)
@@ -424,6 +444,7 @@ Go_intoASV_graphs <- function(
     abund <- igraph::V(g)$total_abundance
     abund[!is.finite(abund)] <- 0
     if (sum(abund) <= 0) abund <- rep(1, length(radial))
+    set.seed(seed)
     comm <- tryCatch(igraph::cluster_louvain(g, weights = igraph::E(g)$inv_distance), error = function(e) NULL)
     modularity <- if (!is.null(comm)) igraph::modularity(comm) else NA_real_
     species <- if ("Species" %in% colnames(cloud_obj$nodes)) {
@@ -520,10 +541,6 @@ Go_intoASV_graphs <- function(
       stats::setNames(cols_i, species_i)
     }))
     species_cols
-  }
-
-  if (is.null(species_palette)) {
-    species_palette <- .build_genus_palette(stats_df)
   }
 
   .compute_centers <- function(sequence_cloud_list_i, cluster_layout_i) {
@@ -639,6 +656,44 @@ Go_intoASV_graphs <- function(
     }
   }
 
+  if (is.null(species_palette)) {
+    palette_stats_df <- stats_df
+    if (!is.null(group_stats_df) && all(c("Species", "Genus") %in% colnames(group_stats_df))) {
+      palette_stats_df <- unique(rbind(
+        stats_df[, c("Species", "Genus"), drop = FALSE],
+        group_stats_df[, c("Species", "Genus"), drop = FALSE]
+      ))
+    }
+    species_palette <- .build_genus_palette(palette_stats_df)
+  }
+
+  .make_legend_labels <- function(sequence_cloud_lists_i) {
+    if (is.null(sequence_cloud_lists_i) || length(sequence_cloud_lists_i) == 0) return(character())
+    legend_df <- do.call(rbind, lapply(sequence_cloud_lists_i, function(cloud_list_i) {
+      do.call(rbind, lapply(names(cloud_list_i), function(cl) {
+        stats_i <- .sequence_cloud_stats(cloud_list_i[[cl]])
+        data.frame(
+          ClusterID = cl,
+          SpeciesLabel = stats_i$Species,
+          stringsAsFactors = FALSE
+        )
+      }))
+    }))
+    legend_df <- unique(legend_df[!is.na(legend_df$SpeciesLabel) & nzchar(legend_df$SpeciesLabel), , drop = FALSE])
+    legend_labels <- tapply(legend_df$ClusterID, legend_df$SpeciesLabel, function(x) {
+      paste(sort(unique(x)), collapse = ", ")
+    })
+    legend_labels <- sprintf("%s (%s)", names(legend_labels), unname(legend_labels))
+    names(legend_labels) <- names(tapply(legend_df$ClusterID, legend_df$SpeciesLabel, length))
+    if (length(legend_labels) > 30) legend_labels <- legend_labels[seq_len(30)]
+    legend_labels
+  }
+
+  main_group_legend_labels <- NULL
+  if (!is.null(mainGroup) && !is.null(group_cloud_sets) && length(group_cloud_sets) > 0) {
+    main_group_legend_labels <- .make_legend_labels(lapply(group_cloud_sets, function(x) x$sequence_cloud_list))
+  }
+
   for (layout_i in c("sequence", "cloud")) {
     cluster_layout <- ifelse(layout_i == "sequence", "transformed_mds", "equal_circle")
     plot_title <- ifelse(
@@ -664,7 +719,7 @@ Go_intoASV_graphs <- function(
     plot_file <- file.path(dir_base, paste0(paste(file_tokens, collapse = "_"), ".pdf"))
     plot_obj <- NULL
 
-    .draw_one <- function(sequence_cloud_list_i, panel_label = NULL, zoom_side = "right", show_legend = TRUE, center_map = NULL, cluster_order = NULL, return_parts = FALSE) {
+    .draw_one <- function(sequence_cloud_list_i, panel_label = NULL, zoom_side = "right", show_legend = TRUE, center_map = NULL, cluster_order = NULL, return_parts = FALSE, mirror_x = FALSE, legend_labels_override = NULL) {
     sequence_cloud_list <- sequence_cloud_list_i
     inset_clusters <- NULL
     cloud_names <- if (is.null(cluster_order)) names(sequence_cloud_list) else intersect(cluster_order, names(sequence_cloud_list))
@@ -675,6 +730,9 @@ Go_intoASV_graphs <- function(
       centers <- .compute_centers(sequence_cloud_list, cluster_layout)$centers
     } else {
       centers <- center_map[match(cloud_names, center_map$ClusterID), , drop = FALSE]
+    }
+    if (isTRUE(mirror_x)) {
+      centers$cx <- -centers$cx
     }
 
     overview_nodes <- do.call(rbind, lapply(cloud_names, function(cl) {
@@ -687,7 +745,9 @@ Go_intoASV_graphs <- function(
       scale_i <- .rescale(stats_i$mean_pairwise_distance, to = cluster_scale_range,
                           from = range(cloud_stats$mean_pairwise_distance, na.rm = TRUE))
       center_i <- centers[centers$ClusterID == cl, ]
-      nodes$plot_x <- center_i$cx + (lay$x - mean(lay$x)) / max_span * scale_i
+      local_x <- (lay$x - mean(lay$x)) / max_span * scale_i
+      if (isTRUE(mirror_x)) local_x <- -local_x
+      nodes$plot_x <- center_i$cx + local_x
       nodes$plot_y <- center_i$cy + (lay$y - mean(lay$y)) / max_span * scale_i
       nodes$ClusterID <- cl
       nodes$SpeciesLabel <- stats_i$Species
@@ -705,12 +765,16 @@ Go_intoASV_graphs <- function(
       ed$SpeciesLabel <- unique(nodes$SpeciesLabel)[1]
       ed
     }))
-    legend_labels <- tapply(overview_nodes$ClusterID, overview_nodes$SpeciesLabel, function(x) {
-      paste(sort(unique(x)), collapse = ", ")
-    })
-    legend_labels <- sprintf("%s (%s)", names(legend_labels), unname(legend_labels))
-    names(legend_labels) <- names(tapply(overview_nodes$ClusterID, overview_nodes$SpeciesLabel, length))
-    if (length(legend_labels) > 30) legend_labels <- legend_labels[seq_len(30)]
+    if (is.null(legend_labels_override)) {
+      legend_labels <- tapply(overview_nodes$ClusterID, overview_nodes$SpeciesLabel, function(x) {
+        paste(sort(unique(x)), collapse = ", ")
+      })
+      legend_labels <- sprintf("%s (%s)", names(legend_labels), unname(legend_labels))
+      names(legend_labels) <- names(tapply(overview_nodes$ClusterID, overview_nodes$SpeciesLabel, length))
+      if (length(legend_labels) > 30) legend_labels <- legend_labels[seq_len(30)]
+    } else {
+      legend_labels <- legend_labels_override
+    }
     legend_cols <- min(5, max(1, ceiling(length(legend_labels) / 6)))
 
     main_p <- ggplot2::ggplot() +
@@ -735,6 +799,16 @@ Go_intoASV_graphs <- function(
         )
     }
 
+    fill_guide <- if (isTRUE(show_legend)) {
+      ggplot2::guide_legend(
+        ncol = legend_cols,
+        byrow = TRUE,
+        override.aes = list(size = 4.2, alpha = 1, stroke = 0.15)
+      )
+    } else {
+      "none"
+    }
+
     main_p <- main_p +
       ggplot2::scale_color_manual(values = species_palette, breaks = names(legend_labels), labels = legend_labels, na.value = "grey65") +
       ggplot2::scale_fill_manual(values = species_palette, breaks = names(legend_labels), labels = legend_labels, na.value = "grey65") +
@@ -755,11 +829,7 @@ Go_intoASV_graphs <- function(
         plot.subtitle = ggplot2::element_text(size = ifelse(is.null(panel_label), 9.5, 6.5), hjust = 0.5, margin = ggplot2::margin(b = 0))
       ) +
       ggplot2::guides(
-        fill = ggplot2::guide_legend(
-          ncol = legend_cols,
-          byrow = TRUE,
-          override.aes = list(size = 4.2, alpha = 1, stroke = 0.15)
-        ),
+        fill = fill_guide,
         color = "none"
       ) +
       ggplot2::labs(
@@ -824,12 +894,28 @@ Go_intoASV_graphs <- function(
       stats_i <- .sequence_cloud_stats(obj)
       nodes <- as.data.frame(igraph::vertex_attr(obj$graph), stringsAsFactors = FALSE)
       nodes <- merge(nodes, obj$layout, by = "name", all.x = TRUE, sort = FALSE)
+      nodes$x <- nodes$x - mean(nodes$x, na.rm = TRUE)
+      nodes$y <- nodes$y - mean(nodes$y, na.rm = TRUE)
+      max_r <- max(sqrt(nodes$x^2 + nodes$y^2), na.rm = TRUE)
+      if (is.finite(max_r) && max_r > 0) {
+        nodes$x <- nodes$x / max_r * 0.92
+        nodes$y <- nodes$y / max_r * 0.92
+      }
       ed <- obj$edges
       ed$x <- nodes$x[match(ed$from, nodes$name)]
       ed$y <- nodes$y[match(ed$from, nodes$name)]
       ed$xend <- nodes$x[match(ed$to, nodes$name)]
       ed$yend <- nodes$y[match(ed$to, nodes$name)]
+      circle_df <- data.frame(
+        x = cos(seq(0, 2 * pi, length.out = 360)),
+        y = sin(seq(0, 2 * pi, length.out = 360))
+      )
       p_inset <- ggplot2::ggplot() +
+        ggplot2::geom_path(
+          data = circle_df,
+          ggplot2::aes(x = x, y = y),
+          color = "grey70", linewidth = 0.28
+        ) +
         ggplot2::geom_segment(
           data = ed,
           ggplot2::aes(x = x, y = y, xend = xend, yend = yend, alpha = similarity, linewidth = similarity),
@@ -843,14 +929,14 @@ Go_intoASV_graphs <- function(
         ggplot2::scale_alpha(range = edge_alpha_range) +
         ggplot2::scale_linewidth(range = inset_edge_width_range) +
         ggplot2::scale_size_continuous(range = inset_node_size_range, trans = "sqrt") +
-        ggplot2::coord_equal(clip = "off") +
+        ggplot2::coord_equal(xlim = c(-1.00, 1.00), ylim = c(-1.00, 1.00), clip = "off") +
         ggplot2::theme_void(base_size = 8) +
         ggplot2::theme(
-          plot.background = ggplot2::element_rect(fill = "white", color = "grey75", linewidth = 0.25),
+          plot.background = ggplot2::element_rect(fill = "white", color = NA),
           panel.background = ggplot2::element_rect(fill = "white", color = NA),
           plot.margin = ggplot2::margin(5, 5, 5, 5),
-          plot.title = ggplot2::element_text(face = "bold.italic", size = 8.5, hjust = 0.5),
-          plot.subtitle = ggplot2::element_text(face = "bold", size = 6.8, hjust = 0.5)
+          plot.title = ggplot2::element_text(face = "italic", size = 8.5, hjust = 0.5),
+          plot.subtitle = ggplot2::element_text(face = "plain", size = 6.8, hjust = 0.5)
         ) +
         ggplot2::labs(
           title = stats_i$Species,
@@ -881,7 +967,7 @@ Go_intoASV_graphs <- function(
       } else {
         zoom_panel <- patchwork::wrap_plots(inset_plots, ncol = 1)
       }
-      zoom_width <- if (!is.null(inset_layout)) max(1.15, 0.95 * length(inset_layout)) else 1.15
+      zoom_width <- if (!is.null(inset_layout)) max(1.50, 1.30 * length(inset_layout)) else 1.50
       if (identical(zoom_side, "left")) {
         plot_obj <- patchwork::wrap_plots(list(zoom_panel, main_p), ncol = 2, widths = c(zoom_width, 4.2))
       } else {
@@ -912,16 +998,20 @@ Go_intoASV_graphs <- function(
           show_legend = TRUE,
           center_map = if (is.null(shared_center_info)) NULL else shared_center_info$centers,
           cluster_order = if (is.null(shared_center_info)) NULL else shared_center_info$cloud_names,
-          return_parts = TRUE
+          return_parts = TRUE,
+          mirror_x = FALSE,
+          legend_labels_override = main_group_legend_labels
         )
         right_parts <- .draw_one(
           group_cloud_sets[[group_levels[2]]]$sequence_cloud_list,
           panel_label = paste0(mainGroup, ": ", group_levels[2]),
           zoom_side = "right",
-          show_legend = TRUE,
+          show_legend = FALSE,
           center_map = if (is.null(shared_center_info)) NULL else shared_center_info$centers,
           cluster_order = if (is.null(shared_center_info)) NULL else shared_center_info$cloud_names,
-          return_parts = TRUE
+          return_parts = TRUE,
+          mirror_x = TRUE,
+          legend_labels_override = main_group_legend_labels
         )
 
         bilateral_parts <- list()
@@ -953,7 +1043,8 @@ Go_intoASV_graphs <- function(
             zoom_side = ifelse(i %% 2 == 1, "left", "right"),
             show_legend = TRUE,
             center_map = if (is.null(shared_center_info)) NULL else shared_center_info$centers,
-            cluster_order = if (is.null(shared_center_info)) NULL else shared_center_info$cloud_names
+            cluster_order = if (is.null(shared_center_info)) NULL else shared_center_info$cloud_names,
+            legend_labels_override = main_group_legend_labels
           )
         })
         group_plots_i <- group_plots_i[!vapply(group_plots_i, is.null, logical(1))]
